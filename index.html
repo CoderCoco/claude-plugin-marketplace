@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Plugin Marketplace</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8f9fb; color: #111; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    header a { color: #6b7280; font-size: 0.875rem; text-decoration: none; }
+    header a:hover { color: #4f46e5; }
+
+    .hero { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 48px 24px; text-align: center; }
+    .hero h1 { font-size: 2rem; font-weight: 800; }
+    .hero p  { margin-top: 10px; color: #6b7280; max-width: 520px; margin-inline: auto; line-height: 1.6; }
+    .hero code { background: #f3f4f6; border-radius: 4px; padding: 2px 6px; font-size: 0.85em; font-family: monospace; }
+
+    main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 36px 24px; }
+
+    .install-box { background: #1e1e2e; color: #cdd6f4; border-radius: 10px; padding: 16px 20px; margin-bottom: 32px; font-size: 0.875rem; line-height: 1.8; font-family: monospace; }
+    .install-box .comment { color: #6c7086; }
+
+    h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 14px; color: #111; }
+
+    #plugin-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .card-name { font-size: 1rem; font-weight: 700; }
+    .card-desc { font-size: 0.85rem; color: #6b7280; line-height: 1.5; flex: 1; }
+    .card-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .tag { background: #f3f4f6; color: #6b7280; font-size: 0.72rem; border-radius: 999px; padding: 3px 9px; }
+    .badge-example { background: #ede9fe; color: #5b21b6; }
+    .card-cmd { background: #1e1e2e; color: #a6e3a1; font-family: monospace; font-size: 0.8rem; border-radius: 6px; padding: 8px 10px; }
+
+    footer { border-top: 1px solid #e5e7eb; background: #fff; text-align: center; padding: 16px; font-size: 0.8rem; color: #9ca3af; }
+    footer a { color: #6b7280; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🧩 Claude Plugin Marketplace</span>
+  <a href="https://github.com/CoderCoco/claude-plugin-marketplace" target="_blank">GitHub ↗</a>
+</header>
+
+<div class="hero">
+  <h1>Claude Plugin Marketplace</h1>
+  <p>
+    Extend <a href="https://claude.ai/code">Claude Code</a> with community plugins.
+    Add this marketplace with one command, then install any plugin instantly.
+  </p>
+</div>
+
+<main>
+  <div class="install-box">
+    <span class="comment"># 1. Add this marketplace to Claude Code</span><br>
+    /plugin marketplace add CoderCoco/claude-plugin-marketplace<br><br>
+    <span class="comment"># 2. Install a plugin</span><br>
+    /plugin install hello-world@claude-plugin-marketplace
+  </div>
+
+  <h2>Available Plugins</h2>
+  <div id="plugin-list"><p style="color:#9ca3af">Loading…</p></div>
+</main>
+
+<footer>
+  Claude Plugin Marketplace — open source on
+  <a href="https://github.com/CoderCoco/claude-plugin-marketplace">GitHub</a>
+</footer>
+
+<script>
+  fetch(".claude-plugin/marketplace.json")
+    .then(r => r.json())
+    .then(render)
+    .catch(() => render(FALLBACK));
+
+  // Inline fallback so the page works when opened as file://
+  const FALLBACK = {
+    name: "claude-plugin-marketplace",
+    plugins: [
+      {
+        name: "hello-world",
+        description: "The simplest possible plugin — adds a /hello-world skill. Use it as a starter template.",
+        version: "1.0.0",
+        keywords: ["example", "starter", "template"],
+        category: "example"
+      }
+    ]
+  };
+
+  function esc(str) {
+    return String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function render(data) {
+    const list = document.getElementById("plugin-list");
+    if (!data.plugins || !data.plugins.length) {
+      list.innerHTML = '<p style="color:#9ca3af">No plugins yet.</p>';
+      return;
+    }
+    const marketplaceName = esc(data.name ?? "claude-plugin-marketplace");
+    list.innerHTML = data.plugins.map(p => `
+      <div class="card">
+        <div class="card-name">${esc(p.name)}</div>
+        <div class="card-desc">${esc(p.description)}</div>
+        <div class="card-cmd">/plugin install ${esc(p.name)}@${marketplaceName}</div>
+        <div class="card-meta">
+          ${p.version ? `<span class="tag">v${esc(p.version)}</span>` : ""}
+          ${p.license ? `<span class="tag">${esc(p.license)}</span>` : ""}
+          ${p.category === "example" ? '<span class="tag badge-example">example</span>' : ""}
+          ${(p.keywords ?? []).map(k => `<span class="tag">${esc(k)}</span>`).join("")}
+        </div>
+      </div>
+    `).join("");
+  }
+</script>
+</body>
+</html>

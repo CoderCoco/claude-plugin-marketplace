@@ -1,0 +1,22 @@
+{
+  "name": "claude-plugin-marketplace",
+  "description": "A community marketplace of Claude Code plugins.",
+  "owner": {
+    "name": "CoderCoco"
+  },
+  "plugins": [
+    {
+      "name": "hello-world",
+      "source": "./plugins/hello-world",
+      "description": "The simplest possible plugin — adds a /hello-world skill. Use it as a starter template.",
+      "version": "1.0.0",
+      "author": {
+        "name": "CoderCoco"
+      },
+      "license": "MIT",
+      "repository": "https://github.com/CoderCoco/claude-plugin-marketplace",
+      "keywords": ["example", "starter", "template", "hello-world"],
+      "category": "example"
+    }
+  ]
+}
