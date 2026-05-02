@@ -1,5 +1,5 @@
 ---
-name: work-on-issue
+name: work-on
 description: Use when the user wants to start working on a GitHub issue. Trigger whenever the user says "work on issue #N", "start issue N", "/work-on #N", "pick up issue N", or indicates they are about to implement a specific GitHub issue by number. Automatically loads the issue body, creates a git branch and worktree, and moves the issue to In Progress on the project board. Use proactively whenever an issue number appears alongside intent to implement.
 ---
 
