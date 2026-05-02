@@ -1,0 +1,453 @@
+[
+  {
+    "slug": "calculator",
+    "name": "Calculator",
+    "description": "Perform arithmetic, algebra, unit conversions, and statistical computations directly inside Claude.",
+    "longDescription": "The Calculator plugin extends Claude with a powerful computation engine. It can evaluate arithmetic expressions, solve algebraic equations, convert between units, and compute statistical summaries. All calculations are performed with high precision and the plugin returns both the result and a step-by-step explanation.\n\n**Features:**\n- Arithmetic: +, -, *, /, %, ** (power)\n- Trigonometry: sin, cos, tan and inverses\n- Unit conversions: length, mass, temperature, volume\n- Statistics: mean, median, mode, variance, std deviation\n- Expression simplification",
+    "version": "1.0.0",
+    "category": "utilities",
+    "tags": ["math", "calculator", "units", "statistics", "algebra"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "🧮",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/calculator",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/calculator",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/calculator/server.js"]
+    },
+    "tools": [
+      {
+        "name": "calculate",
+        "description": "Evaluate a mathematical expression and return the result with optional step-by-step explanation.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "description": "The mathematical expression to evaluate, e.g. '2 + 2', 'sqrt(16)', 'sin(45 deg)'"
+            },
+            "showSteps": {
+              "type": "boolean",
+              "description": "Whether to include step-by-step explanation",
+              "default": false
+            }
+          },
+          "required": ["expression"]
+        }
+      },
+      {
+        "name": "convert_units",
+        "description": "Convert a value from one unit to another.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "value": { "type": "number", "description": "The numeric value to convert" },
+            "from": { "type": "string", "description": "Source unit (e.g. 'km', 'kg', 'celsius')" },
+            "to": { "type": "string", "description": "Target unit (e.g. 'miles', 'lbs', 'fahrenheit')" }
+          },
+          "required": ["value", "from", "to"]
+        }
+      },
+      {
+        "name": "statistics",
+        "description": "Compute descriptive statistics for a list of numbers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "numbers": {
+              "type": "array",
+              "items": { "type": "number" },
+              "description": "Array of numbers to analyze"
+            }
+          },
+          "required": ["numbers"]
+        }
+      }
+    ],
+    "publishedAt": "2024-01-15T00:00:00Z",
+    "updatedAt": "2024-03-20T00:00:00Z",
+    "downloads": 1240,
+    "rating": 4.8,
+    "ratingCount": 92,
+    "featured": true
+  },
+  {
+    "slug": "weather",
+    "name": "Weather",
+    "description": "Get real-time weather conditions, forecasts, and historical weather data for any location worldwide.",
+    "longDescription": "The Weather plugin gives Claude access to up-to-date meteorological data. You can ask for current conditions, multi-day forecasts, hourly breakdowns, or look up historical weather for any city or coordinates.\n\n**Features:**\n- Current conditions: temperature, humidity, wind, visibility\n- 7-day forecasts with high/low temperatures\n- Hourly breakdown for the next 48 hours\n- Historical weather by date range\n- Severe weather alerts\n- Air quality index (AQI)\n\nPowered by a public weather API—no API key required for basic usage.",
+    "version": "1.2.0",
+    "category": "utilities",
+    "tags": ["weather", "forecast", "climate", "temperature", "outdoor"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "🌤️",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/weather",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/weather",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/weather/server.js"],
+      "env": {
+        "WEATHER_API_KEY": "your-api-key-here"
+      }
+    },
+    "tools": [
+      {
+        "name": "get_current_weather",
+        "description": "Get current weather conditions for a location.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "City name, postal code, or 'lat,lon' coordinates"
+            },
+            "units": {
+              "type": "string",
+              "enum": ["metric", "imperial"],
+              "default": "metric",
+              "description": "Temperature units"
+            }
+          },
+          "required": ["location"]
+        }
+      },
+      {
+        "name": "get_forecast",
+        "description": "Get a multi-day weather forecast for a location.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string", "description": "City name or coordinates" },
+            "days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7,
+              "default": 5,
+              "description": "Number of days to forecast"
+            },
+            "units": {
+              "type": "string",
+              "enum": ["metric", "imperial"],
+              "default": "metric"
+            }
+          },
+          "required": ["location"]
+        }
+      },
+      {
+        "name": "get_alerts",
+        "description": "Get active severe weather alerts for a location.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string", "description": "City name or coordinates" }
+          },
+          "required": ["location"]
+        }
+      }
+    ],
+    "publishedAt": "2024-02-01T00:00:00Z",
+    "updatedAt": "2024-04-05T00:00:00Z",
+    "downloads": 3850,
+    "rating": 4.6,
+    "ratingCount": 210,
+    "featured": true
+  },
+  {
+    "slug": "text-utils",
+    "name": "Text Utilities",
+    "description": "A Swiss-army knife of text processing: word count, readability scores, format conversion, slug generation, and more.",
+    "longDescription": "Text Utilities equips Claude with a comprehensive set of text-processing tools that are tedious to do manually.\n\n**Features:**\n- Word / character / sentence / paragraph counts\n- Readability scores (Flesch-Kincaid, Gunning Fog)\n- Case transformations: camelCase, snake_case, PascalCase, SCREAMING_SNAKE, kebab-case\n- Slug generation for URLs\n- Markdown ↔ plain text conversion\n- JSON / YAML prettifier and minifier\n- Lorem ipsum generator\n- Text diff (line-by-line comparison)",
+    "version": "0.9.1",
+    "category": "developer-tools",
+    "tags": ["text", "string", "markdown", "json", "yaml", "formatting", "readability"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "📝",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/text-utils",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/text-utils",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/text-utils/server.js"]
+    },
+    "tools": [
+      {
+        "name": "word_count",
+        "description": "Count words, characters, sentences, and paragraphs in text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "The text to analyze" }
+          },
+          "required": ["text"]
+        }
+      },
+      {
+        "name": "transform_case",
+        "description": "Convert text to a specific case format.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "The text to transform" },
+            "format": {
+              "type": "string",
+              "enum": ["camelCase", "snake_case", "PascalCase", "SCREAMING_SNAKE", "kebab-case", "Title Case", "lowercase", "UPPERCASE"],
+              "description": "Target format"
+            }
+          },
+          "required": ["text", "format"]
+        }
+      },
+      {
+        "name": "readability_score",
+        "description": "Calculate readability metrics for the given text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "The text to score" }
+          },
+          "required": ["text"]
+        }
+      },
+      {
+        "name": "format_json",
+        "description": "Pretty-print or minify a JSON string.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "json": { "type": "string", "description": "The JSON string to format" },
+            "minify": {
+              "type": "boolean",
+              "default": false,
+              "description": "If true, minify instead of pretty-printing"
+            }
+          },
+          "required": ["json"]
+        }
+      }
+    ],
+    "publishedAt": "2024-03-10T00:00:00Z",
+    "updatedAt": "2024-04-12T00:00:00Z",
+    "downloads": 720,
+    "rating": 4.5,
+    "ratingCount": 44,
+    "featured": false
+  },
+  {
+    "slug": "web-search",
+    "name": "Web Search",
+    "description": "Search the web and retrieve live content from URLs so Claude can answer questions about current events.",
+    "longDescription": "The Web Search plugin lets Claude fetch real-time information from the internet. It supports keyword searches, direct URL fetching, and can extract clean readable text from web pages, stripping out ads and navigation clutter.\n\n**Features:**\n- Keyword web search returning titles, snippets, and URLs\n- Fetch full page content as clean Markdown\n- Domain-restricted search\n- News search mode (last 24h, last week)\n- Safe-search filtering",
+    "version": "2.0.1",
+    "category": "research",
+    "tags": ["search", "web", "internet", "news", "scraping", "research"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "🔍",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/web-search",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/web-search",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/web-search/server.js"],
+      "env": {
+        "SEARCH_API_KEY": "your-search-api-key"
+      }
+    },
+    "tools": [
+      {
+        "name": "search",
+        "description": "Search the web and return a list of results with titles, URLs, and snippets.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "Search query" },
+            "numResults": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "maximum": 20,
+              "description": "Number of results to return"
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["web", "news"],
+              "default": "web"
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "fetch_url",
+        "description": "Fetch and return the text content of a URL as clean Markdown.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string", "description": "The URL to fetch" }
+          },
+          "required": ["url"]
+        }
+      }
+    ],
+    "publishedAt": "2024-01-20T00:00:00Z",
+    "updatedAt": "2024-05-01T00:00:00Z",
+    "downloads": 8920,
+    "rating": 4.9,
+    "ratingCount": 543,
+    "featured": true
+  },
+  {
+    "slug": "github-tools",
+    "name": "GitHub Tools",
+    "description": "Search repositories, read files, list issues and PRs, and interact with GitHub directly from your Claude conversation.",
+    "longDescription": "GitHub Tools brings the full power of the GitHub API into your Claude conversations. You can search repositories, read source files, list and create issues, comment on pull requests, and more—all without leaving your chat.\n\n**Features:**\n- Repository search and info\n- Read any file in any public (or authorized private) repository\n- List, create, and comment on Issues and Pull Requests\n- View commit history and diffs\n- List branches, tags, releases\n- Create and update Gists\n\nRequires a GitHub Personal Access Token for write operations and private repo access.",
+    "version": "1.5.0",
+    "category": "developer-tools",
+    "tags": ["github", "git", "code", "issues", "pull-requests", "developer"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "🐙",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/github-tools",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/github-tools",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/github-tools/server.js"],
+      "env": {
+        "GITHUB_TOKEN": "your-github-pat"
+      }
+    },
+    "tools": [
+      {
+        "name": "search_repos",
+        "description": "Search GitHub repositories by keyword, language, stars, etc.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "GitHub search query" },
+            "language": { "type": "string", "description": "Filter by programming language" },
+            "sort": {
+              "type": "string",
+              "enum": ["stars", "forks", "updated"],
+              "default": "stars"
+            },
+            "limit": { "type": "integer", "default": 10 }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "read_file",
+        "description": "Read the contents of a file from a GitHub repository.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "path": { "type": "string", "description": "Path to the file within the repo" },
+            "ref": { "type": "string", "description": "Branch, tag, or commit SHA", "default": "main" }
+          },
+          "required": ["owner", "repo", "path"]
+        }
+      },
+      {
+        "name": "list_issues",
+        "description": "List issues for a GitHub repository.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "state": { "type": "string", "enum": ["open", "closed", "all"], "default": "open" },
+            "limit": { "type": "integer", "default": 20 }
+          },
+          "required": ["owner", "repo"]
+        }
+      }
+    ],
+    "publishedAt": "2024-02-14T00:00:00Z",
+    "updatedAt": "2024-04-30T00:00:00Z",
+    "downloads": 5610,
+    "rating": 4.7,
+    "ratingCount": 289,
+    "featured": false
+  },
+  {
+    "slug": "database-query",
+    "name": "Database Query",
+    "description": "Connect Claude to PostgreSQL, MySQL, or SQLite databases and run read-only SQL queries safely.",
+    "longDescription": "Database Query gives Claude a secure, read-only window into your relational databases. It supports PostgreSQL, MySQL, and SQLite. All queries are executed in read-only mode with configurable schema restrictions to protect sensitive data.\n\n**Features:**\n- Read-only SQL query execution\n- Table schema introspection\n- Query result formatting (table, JSON, CSV)\n- Query explain / execution plan\n- Configurable schema and table allow-lists\n- Connection pooling for performance\n\nSupports PostgreSQL, MySQL, and SQLite databases.",
+    "version": "1.1.0",
+    "category": "data-analysis",
+    "tags": ["database", "sql", "postgresql", "mysql", "sqlite", "data"],
+    "author": {
+      "name": "Claude Plugin Marketplace",
+      "url": "https://github.com/CoderCoco/claude-plugin-marketplace"
+    },
+    "icon": "🗄️",
+    "repository": "https://github.com/CoderCoco/claude-plugin-marketplace/tree/main/plugins/database-query",
+    "license": "MIT",
+    "installCommand": "npx @claude-plugins/database-query",
+    "mcpConfig": {
+      "command": "node",
+      "args": ["plugins/database-query/server.js"],
+      "env": {
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    },
+    "tools": [
+      {
+        "name": "query",
+        "description": "Execute a read-only SQL SELECT query against the configured database.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": { "type": "string", "description": "The SELECT SQL query to execute" },
+            "format": {
+              "type": "string",
+              "enum": ["table", "json", "csv"],
+              "default": "table"
+            }
+          },
+          "required": ["sql"]
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "List all accessible tables with their column definitions.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "type": "string",
+              "description": "Schema name to list tables from",
+              "default": "public"
+            }
+          }
+        }
+      }
+    ],
+    "publishedAt": "2024-03-01T00:00:00Z",
+    "updatedAt": "2024-04-20T00:00:00Z",
+    "downloads": 2180,
+    "rating": 4.4,
+    "ratingCount": 76,
+    "featured": false
+  }
+]
