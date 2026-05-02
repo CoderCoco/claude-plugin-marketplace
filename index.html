@@ -43,7 +43,7 @@
 
 <header>
   <span class="logo">🧩 Claude Plugin Marketplace</span>
-  <a href="https://github.com/CoderCoco/claude-plugin-marketplace" target="_blank">GitHub ↗</a>
+  <a href="https://github.com/CoderCoco/claude-plugin-marketplace" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
 </header>
 
 <div class="hero">
@@ -59,7 +59,7 @@
     <span class="comment"># 1. Add this marketplace to Claude Code</span><br>
     /plugin marketplace add CoderCoco/claude-plugin-marketplace<br><br>
     <span class="comment"># 2. Install a plugin</span><br>
-    /plugin install hello-world@claude-plugin-marketplace
+    /plugin install hello-world@codercoco-custom-plugin-marketplace
   </div>
 
   <h2>Available Plugins</h2>
@@ -72,14 +72,10 @@
 </footer>
 
 <script>
-  fetch(".claude-plugin/marketplace.json")
-    .then(r => r.json())
-    .then(render)
-    .catch(() => render(FALLBACK));
-
-  // Inline fallback so the page works when opened as file://
+  // Inline fallback used only when the page is opened as a local file (file://)
+  // so developers can preview without a web server.
   const FALLBACK = {
-    name: "claude-plugin-marketplace",
+    name: "codercoco-custom-plugin-marketplace",
     plugins: [
       {
         name: "hello-world",
@@ -90,6 +86,31 @@
       }
     ]
   };
+
+  fetch(".claude-plugin/marketplace.json")
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(render)
+    .catch(err => {
+      // Use the inline FALLBACK only when previewing as a local file (file://).
+      // Any real HTTP error (404, invalid JSON, etc.) surfaces an explicit message.
+      if (location.protocol === "file:") {
+        render(FALLBACK);
+      } else {
+        showError(err);
+      }
+    });
+
+  function showError(err) {
+    const list = document.getElementById("plugin-list");
+    list.innerHTML = `
+      <p style="color:#dc2626;font-size:.9rem">
+        ⚠️ Could not load <code>.claude-plugin/marketplace.json</code>: ${esc(String(err.message))}.
+        Check that the file is accessible and contains valid JSON.
+      </p>`;
+  }
 
   function esc(str) {
     return String(str ?? "")
@@ -106,7 +127,7 @@
       list.innerHTML = '<p style="color:#9ca3af">No plugins yet.</p>';
       return;
     }
-    const marketplaceName = esc(data.name ?? "claude-plugin-marketplace");
+    const marketplaceName = esc(data.name ?? "codercoco-custom-plugin-marketplace");
     list.innerHTML = data.plugins.map(p => `
       <div class="card">
         <div class="card-name">${esc(p.name)}</div>

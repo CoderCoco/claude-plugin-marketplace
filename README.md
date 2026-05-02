@@ -28,7 +28,7 @@ plugins/
 ### 2. Install a plugin
 
 ```shell
-/plugin install hello-world@claude-plugin-marketplace
+/plugin install hello-world@codercoco-custom-plugin-marketplace
 ```
 
 ### 3. Use the skill
