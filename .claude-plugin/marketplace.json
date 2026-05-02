@@ -1,5 +1,5 @@
 {
-  "name": "claude-plugin-marketplace",
+  "name": "codercoco-custom-plugin-marketplace",
   "description": "A community marketplace of Claude Code plugins.",
   "owner": {
     "name": "CoderCoco"
