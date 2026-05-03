@@ -6,19 +6,6 @@
   },
   "plugins": [
     {
-      "name": "hello-world",
-      "source": "./plugins/hello-world",
-      "description": "The simplest possible plugin — adds a /hello-world skill. Use it as a starter template.",
-      "version": "1.0.0",
-      "author": {
-        "name": "CoderCoco"
-      },
-      "license": "MIT",
-      "repository": "https://github.com/CoderCoco/claude-plugin-marketplace",
-      "keywords": ["example", "starter", "template", "hello-world"],
-      "category": "example"
-    },
-    {
       "name": "issue-flow",
       "source": "./plugins/issue-flow",
       "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR.",
