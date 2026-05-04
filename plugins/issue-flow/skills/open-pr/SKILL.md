@@ -1,11 +1,11 @@
 ---
 name: open-pr
-description: Use when the user is ready to put up a pull request for an issue they've been implementing — typically work started via the issue-flow:work-on skill. Trigger whenever the user says "open the PR", "raise a PR", "ship it", "/open-pr", "create a PR for this issue", or otherwise signals that implementation is done and the next step is a pull request. Verifies the issue's checklist is actually complete, discovers any PR conventions present in the current repo (templates, CLAUDE.md notes, sibling PR skills), opens a ready-for-review PR that uses the right closing keyword so GitHub auto-closes the issue on merge, moves the project card to "In Review" when that column exists, and best-effort hands off to /autofix-pr so review comments can be addressed in the background. Use proactively whenever a user wraps up work on an issue branch.
+description: Use when the user is ready to put up a pull request for an issue they've been implementing — typically work started via the issue-flow:work-on skill. Trigger whenever the user says "open the PR", "raise a PR", "ship it", "/open-pr", "create a PR for this issue", or otherwise signals that implementation is done and the next step is a pull request. Verifies the issue's checklist is actually complete, discovers any PR conventions present in the current repo (templates, CLAUDE.md notes, sibling PR skills), opens a ready-for-review PR that uses the right closing keyword so GitHub auto-closes the issue on merge, and moves the project card to "In Review" when that column exists. Use proactively whenever a user wraps up work on an issue branch.
 ---
 
 # Open PR
 
-When the user is ready to put up a pull request for an issue they've been working on (typically via the `work-on` skill in this plugin), follow the steps below. The goal is to verify the work is actually done, build a PR body that fits the host repo's conventions, link the PR back to the issue so GitHub auto-closes it on merge, and hand off to `/autofix-pr` so reviewer comments can be addressed in the background.
+When the user is ready to put up a pull request for an issue they've been working on (typically via the `work-on` skill in this plugin), follow the steps below. The goal is to verify the work is actually done, build a PR body that fits the host repo's conventions, and link the PR back to the issue so GitHub auto-closes it on merge.
 
 This skill is designed to run in **any repo**, not just the marketplace it ships from. Don't hard-code conventions — discover them per-run from the working directory.
 
@@ -81,7 +81,7 @@ The skill might run in any repository, so prefer what already exists over imposi
    - `.github/PULL_REQUEST_TEMPLATE/*.md` (if there are multiple, ask which to use)
    - `docs/PULL_REQUEST_TEMPLATE.md`
 2. **Project memory.** Skim `CLAUDE.md` and any `.claude/CLAUDE.md` for a section like "PR style", "Pull request format", or "How we write PRs".
-3. **Sibling skills.** Check the skills already available in the current session for one that documents PR creation (names like `commit-and-pr`, `finishing-a-development-branch`, `commit-push-pr` are common). If a relevant one exists, borrow its body structure — don't delegate to it; this skill has extra responsibilities (issue verification, closing keyword, project board move, autofix-pr handoff) that those skills don't cover.
+3. **Sibling skills.** Check the skills already available in the current session for one that documents PR creation (names like `commit-and-pr`, `finishing-a-development-branch`, `commit-push-pr` are common). If a relevant one exists, borrow its body structure — don't delegate to it; this skill has extra responsibilities (issue verification, closing keyword, project board move) that those skills don't cover.
 4. **Recent PR history.** As a last signal, peek at the last few merged PRs to see how they're structured:
    ```bash
    gh pr list --state merged --limit 3 --json title,body
@@ -135,7 +135,7 @@ EOF
 )"
 ```
 
-Capture the PR URL from the command output — you'll cite it in the summary and pass it to `/autofix-pr`.
+Capture the PR URL from the command output — you'll cite it in the summary.
 
 ## Step 6: Move the project card to "In Review"
 
@@ -161,20 +161,13 @@ fi
 
 If `IN_REVIEW_ID` is empty (the board has no such column) or the issue isn't on a project board at all, mention that you skipped the move and continue. Don't invent a column or fall back to a different status without telling the user.
 
-## Step 7: Hand off to /autofix-pr
-
-Once the PR is open, trigger `/autofix-pr` so future review comments get addressed automatically. It may be installed as a skill in this session or it may be a built-in command — invoke it the same way the user would (`/autofix-pr <PR URL or number>`).
-
-`/autofix-pr` is best-effort: if the invocation fails or the command isn't recognized in this environment, don't treat it as fatal — the PR is already up. Just surface the situation in the summary, e.g.: "Couldn't trigger `/autofix-pr` in this environment; install it or run it manually when needed."
-
-## Step 8: Summarize
+## Step 7: Summarize
 
 Tell the user, in order:
 
 1. PR URL.
 2. Issue number and the closing keyword used (so they can confirm it'll auto-close on merge).
 3. Project board move — "In Review", or skipped if the column wasn't present.
-4. Whether `/autofix-pr` was triggered, skipped, or failed.
-5. Any follow-up items the user opted to defer in Step 2, with links if you opened them as new issues.
+4. Any follow-up items the user opted to defer in Step 2, with links if you opened them as new issues.
 
-Keep it short — five lines is plenty. The PR itself is the artifact; this is just the receipt.
+Keep it short — four lines is plenty. The PR itself is the artifact; this is just the receipt.
