@@ -1,13 +1,18 @@
 ---
 name: work-on
 description: Use when the user wants to start working on a GitHub issue. Trigger whenever the user says "work on issue #N", "start issue N", "/work-on #N", "pick up issue N", or indicates they are about to implement a specific GitHub issue by number. Automatically loads the issue body, creates a git branch and worktree, moves the issue to In Progress on the project board, tracks checkbox progress, loops until all checklist items are complete, and does a final evaluation. Use proactively whenever an issue number appears alongside intent to implement.
-allowed-tools: EnterWorktree ExitWorktree
+allowed-tools: EnterWorktree ExitWorktree Bash(gh repo view:*)
 compatibility: Requires the GitHub MCP plugin (mcp__plugin_github_github) for structured issue reads and edits. Falls back to gh CLI if unavailable. Project board operations always use gh CLI.
 ---
 
 # Work On Issue
 
 When the user wants to start working on a GitHub issue, follow these steps in order. They automate the mechanical setup so you can focus on implementation immediately.
+
+## Environment Information
+
+OWNER: !`gh repo view --json owner | jq -r .owner.login`
+REPO: !`gh repo view --json name | jq -r .name`
 
 ## Step 0: Check GitHub MCP availability
 
@@ -28,21 +33,7 @@ Before proceeding, check whether `mcp__plugin_github_github__issue_read` is avai
 
 Wait for their answer. If they want to install first, stop here. Otherwise proceed using the CLI fallback noted at each step.
 
-## Step 1: Extract the issue number and repo identity
-
-Parse the issue number from the user's message. If it's ambiguous or missing, ask: "Which issue number?"
-
-Derive the repo owner and name — these are required for MCP tool calls:
-
-```bash
-git remote get-url origin
-```
-
-Parse the output to extract `OWNER` and `REPO`:
-- HTTPS: `https://github.com/OWNER/REPO.git`
-- SSH: `git@github.com:OWNER/REPO.git`
-
-## Step 2: Read the issue
+## Step 1: Read the issue
 
 **MCP:** Call `mcp__plugin_github_github__issue_read` with `method: "get"`, `owner`, `repo`, and `issue_number`. This returns the issue title, body, labels, state, and comments.
 
@@ -66,7 +57,7 @@ Extract from `projectItems[0]`:
 
 **Identify acceptance criteria and checkboxes:** Scan the issue body for any `- [ ]` items and any acceptance criteria stated in prose. List them explicitly before starting — these are the definition of done. If any items conflict with each other (e.g., two checkboxes requiring contradictory implementations), flag the conflict and ask how to resolve it before proceeding.
 
-## Step 3: Create a branch and worktree
+## Step 2: Create a branch and worktree
 
 Derive a short slug from the issue title: 3–5 lowercase hyphenated words, no punctuation. Then create the worktree and enter it:
 
@@ -83,17 +74,16 @@ After the worktree is created, call the `EnterWorktree` tool with `path: "$WORKT
 
 If the worktree or branch already exists, note it and reuse it — pass the existing path to `EnterWorktree` rather than erroring out. The `.worktrees/` directory should be gitignored; add it if it isn't.
 
-## Step 4: Move to "In Progress" on the project board
+## Step 3: Move to "In Progress" on the project board
 
 Project board operations require `gh` CLI regardless of MCP availability — there are no MCP equivalents for `gh project` commands:
 
 ```bash
 ITEM_ID=<from projectItems[0].id>
 PROJECT_NUMBER=<from projectItems[0].project.number>
-REPO_OWNER=$(gh repo view --json owner --jq '.owner.login')
 
 # Discover the Status field ID and "In Progress" option ID
-FIELD_JSON=$(gh project field-list "$PROJECT_NUMBER" --owner "$REPO_OWNER" --format json)
+FIELD_JSON=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json)
 STATUS_FIELD_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .id')
 IN_PROGRESS_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
 
@@ -107,7 +97,7 @@ gh project item-edit \
 
 If `ITEM_ID` or `PROJECT_NUMBER` is empty, the issue isn't on any project board — mention it and continue.
 
-## Step 5: Implement, tracking progress as you go
+## Step 4: Implement, tracking progress as you go
 
 Tell the user concisely:
 - Issue title + scope summary
@@ -131,7 +121,7 @@ gh issue edit <number> --body "$UPDATED"
 
 Checking items off as you go makes progress visible and creates a clear audit trail of what's been done.
 
-## Step 6: Completion check and loop
+## Step 5: Completion check and loop
 
 After finishing what feels like all the work, verify nothing was missed:
 
@@ -146,7 +136,7 @@ If the count is greater than zero, there are still open items. Don't stop — re
 
 If a remaining item turns out to conflict with work already done (e.g., it asks for something that directly contradicts a decision already made), surface the conflict clearly to the user rather than silently skipping it or making an arbitrary choice. Describe exactly what conflicts and why, and ask for direction.
 
-## Step 7: Final evaluation
+## Step 6: Final evaluation
 
 Once all checkboxes are checked (or if there were none), step back from implementation mode and evaluate the work as if you're a reviewer seeing it for the first time:
 
