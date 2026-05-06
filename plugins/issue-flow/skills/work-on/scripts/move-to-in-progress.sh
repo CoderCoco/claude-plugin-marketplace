@@ -12,14 +12,13 @@ if [ -z "$ITEM_ID" ] || [ -z "$PROJECT_NUMBER" ]; then
   exit 0
 fi
 
-FIELD_JSON=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json)
-STATUS_FIELD_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .id')
-IN_PROGRESS_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name | ascii_downcase == "in progress") | .id')
-
-if [ -z "$IN_PROGRESS_ID" ]; then
-  echo "No 'In Progress' (or 'In progress') column found on project board — skipping."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOOKUP=$(bash "${SCRIPT_DIR}/get-project-status-option.sh" "$PROJECT_NUMBER" "$OWNER" --status "in progress" 2>&1) || {
+  echo "No 'In Progress' column found on project board — skipping."
   exit 0
-fi
+}
+STATUS_FIELD_ID=$(echo "$LOOKUP" | head -1)
+IN_PROGRESS_ID=$(echo "$LOOKUP" | tail -1)
 
 gh project item-edit \
   --id "$ITEM_ID" \
