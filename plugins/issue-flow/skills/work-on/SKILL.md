@@ -59,20 +59,12 @@ Extract from `projectItems[0]`:
 
 ## Step 2: Create a branch and worktree
 
-Derive a short slug from the issue title: 3–5 lowercase hyphenated words, no punctuation. Then create the worktree and enter it:
+Derive a short slug from the issue title: 3–5 lowercase hyphenated words, no punctuation. Then call the `EnterWorktree` tool directly — it creates the worktree and branch automatically and switches the session into it:
 
-```bash
-ISSUE_NUM=<number>
-SLUG=<derived-slug>
-BRANCH="claude/issue-${ISSUE_NUM}-${SLUG}"
-WORKTREE_PATH=".worktrees/${BRANCH}"
+- `path`: `.claude/worktrees/claude/issue-<N>-<slug>`
+- `branch`: `claude/issue-<N>-<slug>` (new branch off the current HEAD)
 
-git worktree add "$WORKTREE_PATH" -b "${BRANCH}"
-```
-
-After the worktree is created, call the `EnterWorktree` tool with `path: "$WORKTREE_PATH"` to switch the session into it. This ensures all subsequent file reads, edits, and shell commands operate inside the isolated worktree rather than the main checkout.
-
-If the worktree or branch already exists, note it and reuse it — pass the existing path to `EnterWorktree` rather than erroring out. The `.worktrees/` directory should be gitignored; add it if it isn't.
+If the worktree or branch already exists, pass the same path to `EnterWorktree` and it will reuse it. All subsequent file reads, edits, and shell commands operate inside the isolated worktree rather than the main checkout.
 
 ## Step 3: Move to "In Progress" on the project board
 
@@ -89,7 +81,7 @@ The script handles the field/option ID discovery, updates the project item statu
 Tell the user concisely:
 - Issue title + scope summary
 - The full list of checkboxes / acceptance criteria you identified (numbered for reference)
-- That you've entered the worktree at `.worktrees/<branch>` (the session is now scoped there)
+- That you've entered the worktree at `.claude/worktrees/<branch>` (the session is now scoped there)
 - That the issue is now "In Progress" on the board
 
 Then begin implementation. As you complete each checkbox item, mark it done immediately — don't batch updates until the end. Fetch the current issue body, replace the matching `- [ ]` line with `- [x]`, and push the edit back:
