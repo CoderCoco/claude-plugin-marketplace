@@ -1,6 +1,7 @@
 ---
 name: work-on
 description: Use when the user wants to start working on a GitHub issue. Trigger whenever the user says "work on issue #N", "start issue N", "/work-on #N", "pick up issue N", or indicates they are about to implement a specific GitHub issue by number. Automatically loads the issue body, creates a git branch and worktree, moves the issue to In Progress on the project board, tracks checkbox progress, loops until all checklist items are complete, and does a final evaluation. Use proactively whenever an issue number appears alongside intent to implement.
+tools: EnterWorktree, ExitWorktree
 ---
 
 # Work On Issue
@@ -29,17 +30,20 @@ Also extract the project info from `projectItems[0]` — you'll need it in Step 
 
 ## Step 3: Create a branch and worktree
 
-Derive a short slug from the issue title: 3–5 lowercase hyphenated words, no punctuation. Then:
+Derive a short slug from the issue title: 3–5 lowercase hyphenated words, no punctuation. Then create the worktree and enter it:
 
 ```bash
 ISSUE_NUM=<number>
 SLUG=<derived-slug>
 BRANCH="claude/issue-${ISSUE_NUM}-${SLUG}"
+WORKTREE_PATH=".worktrees/${BRANCH}"
 
-git worktree add ".worktrees/${BRANCH}" -b "${BRANCH}"
+git worktree add "$WORKTREE_PATH" -b "${BRANCH}"
 ```
 
-If the worktree or branch already exists, note it and reuse it — don't error out. The `.worktrees/` directory should be gitignored; add it if it isn't.
+After the worktree is created, call the `EnterWorktree` tool with `path: "$WORKTREE_PATH"` to switch the session into it. This ensures all subsequent file reads, edits, and shell commands operate inside the isolated worktree rather than the main checkout.
+
+If the worktree or branch already exists, note it and reuse it — pass the existing path to `EnterWorktree` rather than erroring out. The `.worktrees/` directory should be gitignored; add it if it isn't.
 
 ## Step 4: Move to "In Progress" on the project board
 
@@ -70,7 +74,7 @@ If `ITEM_ID` or `PROJECT_NUMBER` is empty, the issue isn't on any project board 
 Tell the user concisely:
 - Issue title + scope summary
 - The full list of checkboxes / acceptance criteria you identified (numbered for reference)
-- Worktree path (`.worktrees/<branch>`)
+- That you've entered the worktree at `.worktrees/<branch>` (the session is now scoped there)
 - That the issue is now "In Progress" on the board
 
 Then begin implementation. As you complete each checkbox item, mark it done immediately — don't batch updates until the end. Fetch the current issue body, replace the matching `- [ ]` line with `- [x]`, and push the edit back:

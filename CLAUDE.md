@@ -23,6 +23,8 @@ index.html                        ← GitHub Pages UI, reads marketplace.json at
 3. Register the plugin in `.claude-plugin/marketplace.json` under the `plugins` array. The `source` field must be the relative path `./plugins/<plugin-name>`.
 4. Both the manifest and the marketplace catalog must be kept in sync — version bumps in `plugin.json` need a matching update in `marketplace.json`.
 
+**Version bump required on every change:** Any modification to a plugin's skills or manifest must be accompanied by a patch or minor version bump in both `plugins/<plugin-name>/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`. Never commit plugin changes without bumping the version in both files.
+
 ## Skill file conventions
 
 - Frontmatter fields: `name` (optional, defaults to directory name), `description` (required), and any trigger keywords.
