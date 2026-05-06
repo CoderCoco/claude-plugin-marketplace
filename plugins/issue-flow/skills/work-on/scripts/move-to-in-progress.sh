@@ -14,10 +14,10 @@ fi
 
 FIELD_JSON=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json)
 STATUS_FIELD_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .id')
-IN_PROGRESS_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
+IN_PROGRESS_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name | ascii_downcase == "in progress") | .id')
 
 if [ -z "$IN_PROGRESS_ID" ]; then
-  echo "No 'In Progress' column found on project board — skipping."
+  echo "No 'In Progress' (or 'In progress') column found on project board — skipping."
   exit 0
 fi
 
