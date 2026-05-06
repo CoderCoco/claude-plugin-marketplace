@@ -1,7 +1,7 @@
 ---
 name: work-on
 description: Use when the user wants to start working on a GitHub issue. Trigger whenever the user says "work on issue #N", "start issue N", "/work-on #N", "pick up issue N", or indicates they are about to implement a specific GitHub issue by number. Automatically loads the issue body, creates a git branch and worktree, moves the issue to In Progress on the project board, tracks checkbox progress, loops until all checklist items are complete, and does a final evaluation. Use proactively whenever an issue number appears alongside intent to implement.
-allowed-tools: EnterWorktree ExitWorktree Bash(gh repo view:*)
+allowed-tools: EnterWorktree ExitWorktree Bash(gh repo view:*) Bash(bash *move-to-in-progress.sh*)
 compatibility: Requires the GitHub MCP plugin (mcp__plugin_github_github) for structured issue reads and edits. Falls back to gh CLI if unavailable. Project board operations always use gh CLI.
 ---
 
@@ -76,26 +76,13 @@ If the worktree or branch already exists, note it and reuse it — pass the exis
 
 ## Step 3: Move to "In Progress" on the project board
 
-Project board operations require `gh` CLI regardless of MCP availability — there are no MCP equivalents for `gh project` commands:
+Run the bundled script with the item ID, project number, and owner extracted in Step 1:
 
 ```bash
-ITEM_ID=<from projectItems[0].id>
-PROJECT_NUMBER=<from projectItems[0].project.number>
-
-# Discover the Status field ID and "In Progress" option ID
-FIELD_JSON=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json)
-STATUS_FIELD_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .id')
-IN_PROGRESS_ID=$(echo "$FIELD_JSON" | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
-
-# Update the status
-gh project item-edit \
-  --id "$ITEM_ID" \
-  --project-id "$PROJECT_NUMBER" \
-  --field-id "$STATUS_FIELD_ID" \
-  --single-select-option-id "$IN_PROGRESS_ID"
+bash "${CLAUDE_SKILL_DIR}/scripts/move-to-in-progress.sh" "$ITEM_ID" "$PROJECT_NUMBER" "$OWNER"
 ```
 
-If `ITEM_ID` or `PROJECT_NUMBER` is empty, the issue isn't on any project board — mention it and continue.
+The script handles the field/option ID discovery, updates the project item status, and prints a confirmation. If the issue isn't on a project board or there's no "In Progress" column, it exits cleanly with a message — just relay that to the user and continue.
 
 ## Step 4: Implement, tracking progress as you go
 
