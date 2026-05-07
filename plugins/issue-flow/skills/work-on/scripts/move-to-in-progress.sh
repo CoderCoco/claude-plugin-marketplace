@@ -20,9 +20,18 @@ LOOKUP=$(bash "${SCRIPT_DIR}/get-project-status-option.sh" "$PROJECT_NUMBER" "$O
 STATUS_FIELD_ID=$(echo "$LOOKUP" | head -1)
 IN_PROGRESS_ID=$(echo "$LOOKUP" | tail -1)
 
+# gh project item-edit requires the project's GraphQL node ID, not its number.
+PROJECT_NODE_ID=$(gh project list --owner "$OWNER" --format json 2>/dev/null \
+  | jq -r --argjson num "$PROJECT_NUMBER" '.projects[] | select(.number == $num) | .id')
+
+if [ -z "$PROJECT_NODE_ID" ]; then
+  echo "Could not resolve project $PROJECT_NUMBER to a node ID — skipping status update."
+  exit 0
+fi
+
 gh project item-edit \
   --id "$ITEM_ID" \
-  --project-id "$PROJECT_NUMBER" \
+  --project-id "$PROJECT_NODE_ID" \
   --field-id "$STATUS_FIELD_ID" \
   --single-select-option-id "$IN_PROGRESS_ID"
 

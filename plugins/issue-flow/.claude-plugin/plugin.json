@@ -1,7 +1,7 @@
 {
   "name": "issue-flow",
   "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR.",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "author": {
     "name": "CoderCoco"
   },
