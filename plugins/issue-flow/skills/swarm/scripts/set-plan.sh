@@ -22,9 +22,11 @@
 #   - .phase = "building"
 #   - .current_task = the first task's id (or null if no tasks)
 #
-# The plan JSON is fed to jq via --argjson, so embedded quotes, backslashes,
-# and newlines in task descriptions or summaries are safe — the filter is
-# never constructed via string interpolation.
+# The plan JSON is fed to jq via --slurpfile, so it is read directly from
+# disk rather than passed through argv. This keeps the script safe for
+# plans of any size (no ARG_MAX limit) and preserves embedded quotes,
+# backslashes, newlines, and shell metacharacters verbatim — the filter
+# is never constructed via string interpolation.
 set -euo pipefail
 
 STATE_FILE="${1:-}"
@@ -51,14 +53,15 @@ if ! jq -e . "$PLAN_FILE" >/dev/null 2>&1; then
   exit 1
 fi
 
-PLAN_JSON=$(cat "$PLAN_FILE")
-
 TMP=$(mktemp "${STATE_FILE}.XXXXXX")
 trap 'rm -f "$TMP"' EXIT
 
-jq --argjson plan "$PLAN_JSON" '
+# --slurpfile reads the entire plan file into an array of parsed JSON values
+# (the file always contains a single object, so $plan[0] is the plan itself).
+# This avoids putting the plan body onto the command line via --argjson.
+jq --slurpfile plan "$PLAN_FILE" '
   .plan = (
-    $plan
+    $plan[0]
     | .tasks |= map(.status //= "pending")
   )
   | .phase = "building"
