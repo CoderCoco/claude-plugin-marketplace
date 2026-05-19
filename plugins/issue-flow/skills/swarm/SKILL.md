@@ -56,7 +56,11 @@ Run the bundled wrapper, which delegates to the sister `work-on` skill's script:
 bash "${SKILL_DIR}/scripts/move-to-in-progress.sh" "$ITEM_ID" "$PROJECT_NUMBER" "$OWNER"
 ```
 
-If the issue isn't on a project board or there's no "In Progress" column, the script exits cleanly — relay the message and continue.
+Exit code semantics:
+
+- **0** — success, OR "issue isn't on a project board / no In Progress column." Relay the message and continue.
+- **1** — the `work-on` sister script is missing (broken plugin install). Surface this to the user plainly, mention that the swarm can still proceed without the board move, and ask whether to continue.
+- Any other non-zero exit — real `gh` or auth error. Surface verbatim and stop.
 
 ## Step 4: Initialise (or resume) state
 
@@ -141,9 +145,9 @@ Loop over plan tasks in order. For each task:
 
 ## Step 7: Dispatch the Quartermaster
 
-Per task:
+Per task. The hard cap is **3 Crewmate attempts per task** — the initial build (already completed in Step 6) plus at most 2 retries. After the 3rd FAIL ye HALT and ask the user; ye do not run a 4th attempt silently.
 
-1. Increment attempt count:
+1. Increment attempt count. The counter records how many Crewmate attempts the Quartermaster is about to have reviewed (1 on the first pass, 2 after one retry, 3 after two retries):
    ```bash
    bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
      '.quartermaster_attempts["<TID>"] = ((.quartermaster_attempts["<TID>"] // 0) + 1)'
@@ -174,16 +178,16 @@ Per task:
      ```
      Continue to the next task in Step 6.
 
-   - **FAIL** AND attempt count <= 2 -> loop back to Step 6 (re-dispatch the same Crewmate with `fixes_needed`). Bump the handoff log accordingly.
+   - **FAIL** AND attempt count `<= 2` (i.e., this was attempt 1 or 2 out of 3) -> loop back to Step 6 (re-dispatch the same Crewmate with `fixes_needed`). Bump the handoff log accordingly.
 
-   - **FAIL** AND attempt count == 3 -> **HALT**. Print:
+   - **FAIL** AND attempt count `== 3` (the initial build plus two retries have all been rejected) -> **HALT**. Print:
      ```
-     Quartermaster has rejected task <TID> three times. Captain is haulin' to. How shall we proceed?
+     Quartermaster has rejected task <TID> on all 3 Crewmate attempts (initial build + 2 retries). Captain is haulin' to. How shall we proceed?
        1. Escalate to ye (the user) for direct help.
        2. Skip this task and continue (records it as failed).
        3. Re-plan via the Navigator with the failure context.
      ```
-     Wait for the user's choice. Do NOT silently retry a fourth time.
+     Wait for the user's choice. Do NOT silently dispatch a 4th attempt.
 
 6. When the last task in the plan is `completed`, mark phase done:
    ```bash
@@ -223,7 +227,7 @@ That's the final receipt the user sees: a table of every handoff, in order, with
 
 **The crew is real, not theatre.** Even when a task feels small, ye dispatch the Crewmate. The Crewmate's report is what the Quartermaster reviews. Ye do not write code in the Captain seat.
 
-**The Quartermaster's word is law.** When the verdict is FAIL, ye do not argue. Ye dispatch the Crewmate again with the fixes. After three FAILs on the same task, ye HALT and ask the user.
+**The Quartermaster's word is law.** When the verdict is FAIL, ye do not argue. Ye dispatch the Crewmate again with the fixes. The cap is **3 Crewmate attempts per task** (initial build + 2 retries); on the 3rd FAIL ye HALT and ask the user — no silent 4th attempt.
 
 **State is persisted before every handoff.** No handoff without an `append-handoff.sh` call. The voyage log is the user's only window into what ye did.
 
@@ -255,7 +259,7 @@ These came from real baseline runs. Memorise the counter for each.
 | "Spawning planner/builder/tester would just add context-passing overhead." | Context-passin' is the FEATURE. Each crew member sees only what they need; that's why this scales.   |
 | "I'd self-review with a quick re-read of the diff."                        | Self-review is what we're tryin' to escape. Dispatch the Quartermaster.                              |
 | "TodoWrite feels like overkill, I don't need a state file."                | The state file is for resumability, not progress vibes. Ye write it every step.                      |
-| "I'll just bash out 5-6 fix attempts before askin' the user."              | Hard cap is 3. On attempt 4 ye HALT.                                                                 |
+| "I'll just bash out 5-6 fix attempts before askin' the user."              | Hard cap is 3 Crewmate attempts per task (initial build + 2 retries). When the 3rd FAIL lands, HALT. |
 | "The empty-array case doesn't really come up in practice."                 | FORBIDDEN. The Quartermaster said FAIL. Ye dispatch a fix, ye don't argue.                           |
 | "The test was overspecified — it's assertin' an implementation detail."    | FORBIDDEN as a Captain rationale. If the Crewmate has a real argument, the Crewmate writes it in `notes` and the user decides. |
 | "The behaviour here is undefined anyway."                                  | FORBIDDEN. The acceptance criterion defined it.                                                      |
@@ -273,7 +277,7 @@ These came from real baseline runs. Memorise the counter for each.
 
 - About to call `Edit` or `Write` on a project file ye-self (not as a script-driven state update)
 - About to skip Step 7 on a task
-- About to retry attempt number 4 on the same task
+- About to dispatch a 4th Crewmate attempt on the same task (cap is 3)
 - About to summarise the voyage without runnin' Step 9
 - Tempted to translate `### VERDICT FAIL` as "good enough"
 - About to write emoji in any output
