@@ -8,13 +8,13 @@
     {
       "name": "issue-flow",
       "source": "./plugins/issue-flow",
-      "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR.",
+      "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR. Includes an agentic /swarm flow that coordinates Navigator, Crewmate, and Quartermaster sub-agents.",
       "author": {
         "name": "CoderCoco"
       },
       "license": "MIT",
       "repository": "https://github.com/CoderCoco/claude-plugin-marketplace",
-      "keywords": ["github", "issues", "workflow", "pr"],
+      "keywords": ["github", "issues", "workflow", "pr", "agents", "swarm"],
       "category": "productivity"
     }
   ]

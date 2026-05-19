@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "swarm-state",
+  "description": "State file persisted by the swarm Captain at .claude/swarm-state/issue-<N>.json inside the worktree.",
+  "type": "object",
+  "required": [
+    "issue",
+    "repo",
+    "title",
+    "branch",
+    "started_at",
+    "phase",
+    "plan",
+    "current_task",
+    "quartermaster_attempts",
+    "handoff_log"
+  ],
+  "properties": {
+    "issue": { "type": "integer" },
+    "repo": { "type": "string", "description": "owner/repo" },
+    "title": { "type": "string" },
+    "branch": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "phase": {
+      "type": "string",
+      "enum": ["planning", "building", "testing", "done", "blocked"]
+    },
+    "plan": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["created_by", "revision", "tasks"],
+          "properties": {
+            "created_by": { "type": "string" },
+            "revision": { "type": "integer", "minimum": 1 },
+            "summary": { "type": "string" },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "desc", "status"],
+                "properties": {
+                  "id": { "type": "string", "pattern": "^T[0-9]+[a-z]*$" },
+                  "desc": { "type": "string" },
+                  "files": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "acceptance": { "type": "string" },
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending", "in_progress", "completed", "failed"]
+                  }
+                }
+              }
+            },
+            "open_questions": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "constraints": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "current_task": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ]
+    },
+    "quartermaster_attempts": {
+      "type": "object",
+      "description": "Map of task id to attempt count. Cap at 3 before escalation.",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "handoff_log": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ts", "from", "to", "ctx", "outcome"],
+        "properties": {
+          "ts": { "type": "string", "format": "date-time" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "ctx": { "type": "string" },
+          "outcome": { "type": "string" }
+        }
+      }
+    }
+  }
+}
