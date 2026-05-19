@@ -14,7 +14,8 @@ The skill body be in pirate voice to keep tone consistent across Captain and the
 
 OWNER: !`gh repo view --json owner | jq -r .owner.login`
 REPO: !`gh repo view --json name | jq -r .name`
-SKILL_DIR: !`echo "${CLAUDE_SKILL_DIR:-$(pwd)/plugins/issue-flow/skills/swarm}"`
+
+Claude Code sets `CLAUDE_SKILL_DIR` automatically when the skill is invoked — it points at the on-disk directory of this skill. Every `bash ...` example below references scripts through `${CLAUDE_SKILL_DIR}/scripts/...`; ye do not need to compute or override it.
 
 ## Step 0: Find the issue number
 
@@ -53,7 +54,7 @@ If the worktree exists, the call reuses it and the **resume flow** kicks in (Ste
 Run the bundled wrapper, which delegates to the sister `work-on` skill's script:
 
 ```bash
-bash "${SKILL_DIR}/scripts/move-to-in-progress.sh" "$ITEM_ID" "$PROJECT_NUMBER" "$OWNER"
+bash "${CLAUDE_SKILL_DIR}/scripts/move-to-in-progress.sh" "$ITEM_ID" "$PROJECT_NUMBER" "$OWNER"
 ```
 
 Exit code semantics:
@@ -65,7 +66,7 @@ Exit code semantics:
 ## Step 4: Initialise (or resume) state
 
 ```bash
-STATE=$(bash "${SKILL_DIR}/scripts/init-state.sh" <N> "$OWNER/$REPO" "<issue title>" "claude/issue-<N>-<slug>")
+STATE=$(bash "${CLAUDE_SKILL_DIR}/scripts/init-state.sh" <N> "$OWNER/$REPO" "<issue title>" "claude/issue-<N>-<slug>")
 ```
 
 The script prints the state-file path. If the file already exists, it exits with code 2 — **that's the resume signal**:
@@ -85,8 +86,8 @@ Mention the state-file path so the user always knows where the log lives.
 Print the handoff banner first:
 
 ```bash
-bash "${SKILL_DIR}/scripts/print-handoff.sh" "Captain" "Navigator" "chart course for issue #<N>"
-bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "Navigator" "chart course for issue #<N>" "dispatched"
+bash "${CLAUDE_SKILL_DIR}/scripts/print-handoff.sh" "Captain" "Navigator" "chart course for issue #<N>"
+bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "Navigator" "chart course for issue #<N>" "dispatched"
 ```
 
 Then call the Navigator sub-agent (`Agent` tool, `subagent_type: navigator`). Hand it:
@@ -99,7 +100,7 @@ Then call the Navigator sub-agent (`Agent` tool, `subagent_type: navigator`). Ha
 The Navigator replies with a `### PLAN ... ### END PLAN` block. Parse it. Persist the plan into the state file:
 
 ```bash
-bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
+bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
   '.plan = {created_by: "Navigator", revision: 1, summary: <summary>, tasks: <tasks>, open_questions: <open>, constraints: <cons>} | .phase = "building" | .current_task = .plan.tasks[0].id'
 ```
 
@@ -108,7 +109,7 @@ bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
 Append the return-leg handoff:
 
 ```bash
-bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Navigator" "Captain" "$TASK_COUNT tasks, revision 1" "ok"
+bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Navigator" "Captain" "$TASK_COUNT tasks, revision 1" "ok"
 ```
 
 If the Navigator returned `open_questions`, surface them to the user BEFORE dispatchin' any Crewmate. Do not guess.
@@ -119,14 +120,14 @@ Loop over plan tasks in order. For each task:
 
 1. Mark task in-progress in state:
    ```bash
-   bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
+   bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
      '(.plan.tasks[] | select(.id == "<TID>")).status = "in_progress" | .current_task = "<TID>"'
    ```
 
 2. Print + log the handoff:
    ```bash
-   bash "${SKILL_DIR}/scripts/print-handoff.sh" "Captain" "Crewmate(<TID>)" "<task desc>"
-   bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "Crewmate(<TID>)" "<task desc>" "dispatched"
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-handoff.sh" "Captain" "Crewmate(<TID>)" "<task desc>"
+   bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "Crewmate(<TID>)" "<task desc>" "dispatched"
    ```
 
 3. Dispatch the Crewmate (`Agent` tool, `subagent_type: crewmate`). Hand it:
@@ -136,7 +137,7 @@ Loop over plan tasks in order. For each task:
 
 4. Parse the `### CREW_REPORT ... ### END CREW_REPORT` block. Append the return-leg handoff:
    ```bash
-   bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Crewmate(<TID>)" "Captain" "<N> files changed" "ok"
+   bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Crewmate(<TID>)" "Captain" "<N> files changed" "ok"
    ```
 
 5. If `status: plan_problem`, go to **Step 8 (re-plan)** with the Crewmate's `plan_problem` text as context.
@@ -149,14 +150,14 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
 
 1. Increment attempt count. The counter records how many Crewmate attempts the Quartermaster is about to have reviewed (1 on the first pass, 2 after one retry, 3 after two retries):
    ```bash
-   bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
+   bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
      '.quartermaster_attempts["<TID>"] = ((.quartermaster_attempts["<TID>"] // 0) + 1)'
    ```
 
 2. Print + log:
    ```bash
-   bash "${SKILL_DIR}/scripts/print-handoff.sh" "Crewmate(<TID>)" "Quartermaster" "review task <TID>"
-   bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Crewmate(<TID>)" "Quartermaster" "review task <TID>" "dispatched"
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-handoff.sh" "Crewmate(<TID>)" "Quartermaster" "review task <TID>"
+   bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Crewmate(<TID>)" "Quartermaster" "review task <TID>" "dispatched"
    ```
 
 3. Dispatch the Quartermaster (`Agent` tool, `subagent_type: quartermaster`). Hand it:
@@ -166,14 +167,14 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
 
 4. Parse the `### VERDICT ... ### END VERDICT` block. Log the return leg with the verdict as outcome:
    ```bash
-   bash "${SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Quartermaster" "Captain" "verdict on <TID>" "$STATUS"
+   bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Quartermaster" "Captain" "verdict on <TID>" "$STATUS"
    ```
 
 5. Branches:
 
    - **PASS** -> mark task completed:
      ```bash
-     bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" \
+     bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
        '(.plan.tasks[] | select(.id == "<TID>")).status = "completed"'
      ```
      Continue to the next task in Step 6.
@@ -191,7 +192,7 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
 
 6. When the last task in the plan is `completed`, mark phase done:
    ```bash
-   bash "${SKILL_DIR}/scripts/update-state.sh" "$STATE" '.phase = "done" | .current_task = null'
+   bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" '.phase = "done" | .current_task = null'
    ```
 
 ## Step 8: Re-plan when the chart was wrong
@@ -209,7 +210,7 @@ Persist the new plan as `revision: N+1`. Update `current_task` to the next pendi
 When phase is `done`:
 
 ```bash
-bash "${SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
+bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
 ```
 
 That's the final receipt the user sees: a table of every handoff, in order, with timestamps and outcomes. After the table, tell the user what to do next — typically `/open-pr` to ship.
