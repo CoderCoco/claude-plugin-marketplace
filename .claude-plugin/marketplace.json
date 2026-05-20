@@ -8,7 +8,7 @@
     {
       "name": "issue-flow",
       "source": "./plugins/issue-flow",
-      "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR. Includes an agentic /swarm flow that coordinates Navigator, Crewmate, and Quartermaster sub-agents.",
+      "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR. Includes /swarm (agent-driven) and /swarm-exec (harness-driven) agentic flows.",
       "author": {
         "name": "CoderCoco"
       },
