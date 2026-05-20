@@ -194,7 +194,36 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
      bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
        '(.plan.tasks[] | select(.id == "<TID>")).status = "completed"'
      ```
-     Continue to the next task in Step 6.
+
+     Then **commit this task's diff**. One commit per PASS, no exceptions — this is how the voyage history stays atomic and bisectable.
+
+     Before composin' the first commit of a voyage, **read the shared reference** at `${CLAUDE_PLUGIN_ROOT}/references/conventional-commits.md` (fallback: `${CLAUDE_SKILL_DIR}/../../references/conventional-commits.md`) for the full Conventional Commits rules used across the issue-flow plugin — type list, scope conventions, body shape, footer requirements, forbidden flags, and the heredoc template. Use the `Read` tool, not `cat`.
+
+     The swarm-specific bits the reference does NOT cover:
+
+     - The subject body uses the format `T<N> - <one-line task desc>` where `T<N>` is the plan task id and the desc is the task's `desc` field (trimmed under 72 chars total).
+     - File staging uses exactly the paths from `CREW_REPORT.files_changed[].path`.
+     - The body's issue-reference line is `Refs #<ISSUE_NUMBER>` (per-task commits never use `Closes`).
+
+     Minimal call shape:
+     ```bash
+     git add <files from CREW_REPORT>
+     git commit -m "$(cat <<'COMMITMSG'
+     <type>(<scope>): T<N> - <task desc>
+
+     Refs #<ISSUE_NUMBER>.
+
+     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     COMMITMSG
+     )"
+     ```
+
+     If the commit succeeds, log it and continue to the next task in Step 6:
+     ```bash
+     bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "git" "commit T<N>: $(git rev-parse --short HEAD)" "ok"
+     ```
+
+     If the commit FAILS (pre-commit hook, signing, anything) -> HALT and surface the error. Do not retry blindly, do not bypass hooks (the reference spells out the forbidden flags).
 
    - **FAIL** AND attempt count `<= 2` (i.e., this was attempt 1 or 2 out of 3) -> loop back to Step 6 (re-dispatch the same Crewmate with `fixes_needed`). Bump the handoff log accordingly.
 
@@ -233,13 +262,22 @@ Then update `current_task` to the next pending task and resume Step 6.
 
 ## Step 9: Print the voyage log
 
-When phase is `done`:
+When phase is `done`, the user gets the voyage log in **two** places — the ASCII table for terminal viewers, and an inline markdown table inside yer reply so the result is visible without expandin' collapsed bash output (Claude Code's chat UI tucks long bash output behind a `ctrl+o`).
 
-```bash
-bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
-```
+1. Print the ASCII version for any humans watchin' the terminal:
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
+   ```
 
-That's the final receipt the user sees: a table of every handoff, in order, with timestamps and outcomes. After the table, tell the user what to do next — typically `/open-pr` to ship.
+2. Grab the markdown version and **paste it verbatim into yer reply to the user** (not as a tool call, as part of yer response text):
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" --md "$STATE"
+   ```
+   The `--md` flag emits a GitHub-flavoured markdown table with pipe-escaped cells. Yer reply MUST include this table body — the user should not need to hit `ctrl+o` to read what the crew did.
+
+3. After the table, tell the user what to do next — typically `/open-pr` to ship.
+
+**Do NOT** stop after step 1. The bash output collapses in chat; the only reliable inline rendering is the markdown table embedded in yer message text.
 
 ## Crew register
 
@@ -273,7 +311,7 @@ There is exactly ONE escape hatch: if the issue is a **trivial single-edit** —
 
 If ANY of those four fail, ye dispatch the full crew. When in doubt, dispatch.
 
-The escape hatch changes Steps 5-7 only. It does NOT change Step 9 (still print the voyage log, even if it's one row) and it does NOT change the "Once the voyage is done" footer rules below. Ye still do not auto-commit, do not auto-push, do not open a PR. The user invokes `/open-pr` (or `work-on`'s usual follow-up) when they're ready.
+The escape hatch changes Steps 5-7 only. It does NOT change Step 9 (still print the voyage log, even if it's one row). It also opts OUT of per-task commits — escape-hatch edits are single trivial changes that don't deserve their own commit; the user commits manually after reviewin'. Do not auto-push. Do not open a PR. The user invokes `/open-pr` (or `work-on`'s usual follow-up) when they're ready.
 
 ## Rationalisations the Captain WILL hear (and how to answer 'em)
 
@@ -314,6 +352,8 @@ All of these mean: stop, breathe, re-read the iron rules.
 
 ## Once the voyage is done
 
-Ye stay in the worktree. The user picks the next move (commit, `/open-pr`, etc.). Do not auto-commit. Do not auto-push. Do not ExitWorktree without bein' asked.
+Ye stay in the worktree. The crew has already produced one commit per PASS verdict (see the PASS branch in Step 7), so the branch is ready for review. The user picks the next move (`/open-pr` to ship, more swarm runs, etc.). Do NOT auto-push. Do NOT open a PR yerself. Do NOT ExitWorktree without bein' asked.
+
+If a task FAILED out (3 Quartermaster FAILs followed by the user pickin' "skip" in Step 7's escalation), that task has NO commit — surface the skipped task explicitly in yer final reply so the user knows what's not on the branch.
 
 Fair winds.

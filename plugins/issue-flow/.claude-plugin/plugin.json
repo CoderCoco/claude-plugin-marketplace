@@ -1,7 +1,7 @@
 {
   "name": "issue-flow",
   "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR. Includes an agentic /swarm flow that coordinates Navigator, Crewmate, and Quartermaster sub-agents.",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "author": {
     "name": "CoderCoco"
   },
