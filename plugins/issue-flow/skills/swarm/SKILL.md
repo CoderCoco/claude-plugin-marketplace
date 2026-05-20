@@ -40,14 +40,37 @@ gh issue view <N> --repo "$OWNER/$REPO" --json number,title,body,labels,projectI
 
 Summarise the issue to the user in 2-3 sentences (pirate voice fine here). Capture `projectItems[0].id` and `projectItems[0].project.number` for the board move in Step 3.
 
-## Step 2: Enter the worktree
+## Step 2: Enter the worktree (off fresh main)
 
-Derive a 3-5 word lowercase hyphenated slug from the issue title. Then call `EnterWorktree` directly:
+Every voyage starts from the latest tip of the repository's default branch on origin — never the user's current local HEAD, never a stale fetch. If ye skip the refresh, the per-task commits ye make later diverge from main the moment someone else lands a change, and the user pays for it at PR time.
 
-- `path`: `.claude/worktrees/claude/issue-<N>-<slug>`
-- `branch`: `claude/issue-<N>-<slug>`
+1. Identify the default branch and refresh origin's view of it BEFORE creating any worktree:
 
-If the worktree exists, the call reuses it and the **resume flow** kicks in (Step 4).
+   ```bash
+   DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|^origin/||')
+   DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+   git fetch origin "$DEFAULT_BRANCH"
+   ```
+
+   Use `$DEFAULT_BRANCH` in any subsequent step that needs the default branch name — do NOT hard-code `main`.
+
+2. Check the user's `worktree.baseRef` setting. The default value `fresh` makes `EnterWorktree` branch from `origin/$DEFAULT_BRANCH` (exactly what we want; combined with the fetch above, the new branch sits on the freshest possible main). The alternative `head` makes it branch from the user's current local HEAD instead — a footgun for this skill:
+
+   ```bash
+   if [ "$(git config --get worktree.baseRef)" = "head" ]; then
+     echo "Warning: worktree.baseRef is 'head', not 'fresh'. The new branch will fork from your current HEAD, not origin/$DEFAULT_BRANCH. To get a fresh-main base, switch to $DEFAULT_BRANCH and pull, or set 'fresh' in your settings."
+   fi
+   ```
+
+   If the setting is `head`, surface the warning to the user verbatim and ask whether to continue or fix it first. Do not silently fork off a random branch.
+
+3. Derive a 3-5 word lowercase hyphenated slug from the issue title. Then call `EnterWorktree`:
+
+   - `name`: `claude/issue-<N>-<slug>`
+
+   With `worktree.baseRef = fresh` (the default) plus the fetch in step 1, the new worktree branches from the freshest possible `origin/$DEFAULT_BRANCH`.
+
+4. If the worktree already exists from a prior run, `EnterWorktree` reuses it and the **resume flow** kicks in (Step 4). The fetch in step 1 is still valuable on resume — it keeps `origin/$DEFAULT_BRANCH` current so the eventual PR's diff is computed against the latest base, and any `git rebase origin/$DEFAULT_BRANCH` the user runs later sees the freshest tip.
 
 ## Step 3: Move the issue to "In Progress"
 
@@ -341,6 +364,7 @@ These came from real baseline runs. Memorise the counter for each.
 ## Red flags — STOP and re-read the rules
 
 - About to call `Edit` or `Write` on a project file ye-self (not as a script-driven state update)
+- About to call `EnterWorktree` without runnin' the `git fetch origin "$DEFAULT_BRANCH"` from Step 2 first (the voyage MUST be off fresh main)
 - About to skip Step 7 on a task
 - About to dispatch a 4th Crewmate attempt on the same task (cap is 3)
 - About to summarise the voyage without runnin' Step 9
