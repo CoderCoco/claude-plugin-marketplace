@@ -1,13 +1,28 @@
 #!/usr/bin/env bash
 # Print the full voyage log table from a swarm state file.
-# Usage: print-voyage-log.sh <STATE_FILE>
-# Pure ASCII, no emoji. Column widths auto-fit.
+# Usage: print-voyage-log.sh [--md] <STATE_FILE>
+#
+# Default output is a pure-ASCII, auto-fitting table (intended for terminals).
+# With --md, output a GitHub-flavoured markdown table that the Captain can
+# paste verbatim into its reply, so the log renders inline in the chat UI
+# without requiring ctrl+o to expand collapsed bash output.
 set -euo pipefail
+
+FORMAT="ascii"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --md|--markdown) FORMAT="md"; shift ;;
+    --) shift; break ;;
+    -*) echo "Unknown flag: $1" >&2; exit 1 ;;
+    *) break ;;
+  esac
+done
 
 STATE_FILE="${1:-}"
 
 if [ -z "$STATE_FILE" ] || [ ! -f "$STATE_FILE" ]; then
-  echo "Usage: print-voyage-log.sh <STATE_FILE>" >&2
+  echo "Usage: print-voyage-log.sh [--md] <STATE_FILE>" >&2
   exit 1
 fi
 
@@ -15,6 +30,49 @@ ISSUE=$(jq -r '.issue' "$STATE_FILE")
 PHASE=$(jq -r '.phase' "$STATE_FILE")
 COUNT=$(jq -r '.handoff_log | length' "$STATE_FILE")
 
+# --- Markdown branch -------------------------------------------------------
+if [ "$FORMAT" = "md" ]; then
+  echo "**Voyage log for issue #${ISSUE}**"
+  echo
+
+  if [ "$COUNT" = "0" ]; then
+    echo "_(no handoffs recorded)_"
+    echo
+    echo "- Final state: \`${PHASE}\`"
+    echo "- State file: \`${STATE_FILE}\`"
+    exit 0
+  fi
+
+  echo "| # | Time | From | To | Context | Outcome |"
+  echo "| --- | --- | --- | --- | --- | --- |"
+
+  # Pipe-escape every cell so embedded \`|\` in ctx / outcome doesn't break the
+  # markdown table; also collapse any literal newlines to a space.
+  jq -r '
+    .handoff_log
+    | to_entries
+    | map(
+        [
+          ((.key + 1) | tostring),
+          (.value.ts | split("T")[1] | split("Z")[0]),
+          .value.from,
+          .value.to,
+          .value.ctx,
+          .value.outcome
+        ]
+        | map(. | gsub("\\|"; "\\|") | gsub("\n"; " "))
+        | "| " + join(" | ") + " |"
+      )
+    | .[]
+  ' "$STATE_FILE"
+
+  echo
+  echo "- Final state: \`${PHASE}\`"
+  echo "- State file: \`${STATE_FILE}\`"
+  exit 0
+fi
+
+# --- ASCII branch (terminal) ----------------------------------------------
 echo
 echo "Voyage log for issue #${ISSUE}:"
 echo
@@ -28,7 +86,6 @@ if [ "$COUNT" = "0" ]; then
 fi
 
 # Pull rows: idx, hh:mm:ss, from, to, ctx, outcome.
-# Time is the HH:MM:SS portion of the ISO timestamp.
 ROWS_TSV=$(jq -r '
   .handoff_log
   | to_entries

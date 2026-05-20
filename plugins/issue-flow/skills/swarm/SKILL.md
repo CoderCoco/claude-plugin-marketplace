@@ -233,13 +233,22 @@ Then update `current_task` to the next pending task and resume Step 6.
 
 ## Step 9: Print the voyage log
 
-When phase is `done`:
+When phase is `done`, the user gets the voyage log in **two** places — the ASCII table for terminal viewers, and an inline markdown table inside yer reply so the result is visible without expandin' collapsed bash output (Claude Code's chat UI tucks long bash output behind a `ctrl+o`).
 
-```bash
-bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
-```
+1. Print the ASCII version for any humans watchin' the terminal:
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" "$STATE"
+   ```
 
-That's the final receipt the user sees: a table of every handoff, in order, with timestamps and outcomes. After the table, tell the user what to do next — typically `/open-pr` to ship.
+2. Grab the markdown version and **paste it verbatim into yer reply to the user** (not as a tool call, as part of yer response text):
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/scripts/print-voyage-log.sh" --md "$STATE"
+   ```
+   The `--md` flag emits a GitHub-flavoured markdown table with pipe-escaped cells. Yer reply MUST include this table body — the user should not need to hit `ctrl+o` to read what the crew did.
+
+3. After the table, tell the user what to do next — typically `/open-pr` to ship.
+
+**Do NOT** stop after step 1. The bash output collapses in chat; the only reliable inline rendering is the markdown table embedded in yer message text.
 
 ## Crew register
 
