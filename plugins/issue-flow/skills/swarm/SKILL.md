@@ -352,7 +352,7 @@ All of these mean: stop, breathe, re-read the iron rules.
 
 ## Once the voyage is done
 
-Ye stay in the worktree. The crew has already produced one commit per PASS verdict (see Step 7.5), so the branch is ready for review. The user picks the next move (`/open-pr` to ship, more swarm runs, etc.). Do NOT auto-push. Do NOT open a PR yerself. Do NOT ExitWorktree without bein' asked.
+Ye stay in the worktree. The crew has already produced one commit per PASS verdict (see the PASS branch in Step 7), so the branch is ready for review. The user picks the next move (`/open-pr` to ship, more swarm runs, etc.). Do NOT auto-push. Do NOT open a PR yerself. Do NOT ExitWorktree without bein' asked.
 
 If a task FAILED out (3 Quartermaster FAILs followed by the user pickin' "skip" in Step 7's escalation), that task has NO commit — surface the skipped task explicitly in yer final reply so the user knows what's not on the branch.
 
