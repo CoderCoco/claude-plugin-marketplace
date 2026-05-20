@@ -40,14 +40,56 @@ gh issue view <N> --repo "$OWNER/$REPO" --json number,title,body,labels,projectI
 
 Summarise the issue to the user in 2-3 sentences (pirate voice fine here). Capture `projectItems[0].id` and `projectItems[0].project.number` for the board move in Step 3.
 
-## Step 2: Enter the worktree
+## Step 2: Enter the worktree (off fresh origin default branch)
 
-Derive a 3-5 word lowercase hyphenated slug from the issue title. Then call `EnterWorktree` directly:
+Every voyage starts from the latest tip of the repository's default branch on origin — never the user's current local HEAD, never a stale remote-tracking ref. If ye skip the refresh, the per-task commits ye make later diverge from the default branch the moment someone else lands a change, and the user pays for it at PR time.
 
-- `path`: `.claude/worktrees/claude/issue-<N>-<slug>`
-- `branch`: `claude/issue-<N>-<slug>`
+1. Identify the default branch from `origin/HEAD`. Do NOT assume `main` — the repo could use `master`, `develop`, `trunk`, or anythin' else:
 
-If the worktree exists, the call reuses it and the **resume flow** kicks in (Step 4).
+   ```bash
+   DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|^origin/||')
+   ```
+
+   If `$DEFAULT_BRANCH` is empty (origin/HEAD doesn't resolve — uncommon but happens on misconfigured remotes), HALT. Do NOT silently fall back to a hard-coded name. Surface this to the user:
+
+   > Origin's default branch could not be resolved. Run one of these and try again:
+   >   git remote set-head origin --auto       # auto-detect from remote
+   >   git remote set-head origin <branch>     # set explicitly
+   > Or re-invoke /swarm with the default branch known in your environment.
+
+2. Refresh origin's view of the default branch BEFORE creating any worktree:
+
+   ```bash
+   git fetch origin "$DEFAULT_BRANCH"
+   ```
+
+3. Derive a 3-5 word lowercase hyphenated slug from the issue title and compute the branch + path:
+
+   ```bash
+   SLUG="<derived-slug>"
+   BRANCH="claude/issue-<N>-${SLUG}"
+   WORKTREE_PATH=".claude/worktrees/${BRANCH}"
+   ```
+
+4. Create (or attach to) the worktree explicitly, basing it on the freshly-fetched `origin/$DEFAULT_BRANCH`. Using `git worktree add` directly bypasses any `worktree.baseRef` setting (some installs default to `head`, which would silently fork off the user's current branch) and guarantees the branch name matches the resume regex used in Step 0:
+
+   ```bash
+   if git show-ref --quiet "refs/heads/$BRANCH"; then
+     # Branch already exists from a prior run — attach a worktree to it (resume path).
+     git worktree add "$WORKTREE_PATH" "$BRANCH"
+   else
+     # Fresh voyage — branch off the latest origin/$DEFAULT_BRANCH.
+     git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$DEFAULT_BRANCH"
+   fi
+   ```
+
+5. Switch the session into the worktree:
+
+   - Call `EnterWorktree` with `path: "$WORKTREE_PATH"` (the worktree now exists; pass `path:`, not `name:`).
+
+6. If the worktree was reused (existed from a prior run), the **resume flow** kicks in at Step 4. The fetch in step 2 is still valuable on resume — it keeps `origin/$DEFAULT_BRANCH` current so the eventual PR's diff is computed against the latest base, and any `git rebase origin/$DEFAULT_BRANCH` the user runs later sees the freshest tip.
+
+Use `$DEFAULT_BRANCH` in any later step that needs the default branch name (e.g. base ref for the PR) — do not hard-code `main`.
 
 ## Step 3: Move the issue to "In Progress"
 
@@ -341,6 +383,7 @@ These came from real baseline runs. Memorise the counter for each.
 ## Red flags — STOP and re-read the rules
 
 - About to call `Edit` or `Write` on a project file ye-self (not as a script-driven state update)
+- About to call `git worktree add` (or `EnterWorktree`) without first resolvin' `$DEFAULT_BRANCH` from `origin/HEAD` and runnin' `git fetch origin "$DEFAULT_BRANCH"` (the voyage MUST be off the fresh tip of origin's default branch — name varies per repo)
 - About to skip Step 7 on a task
 - About to dispatch a 4th Crewmate attempt on the same task (cap is 3)
 - About to summarise the voyage without runnin' Step 9
