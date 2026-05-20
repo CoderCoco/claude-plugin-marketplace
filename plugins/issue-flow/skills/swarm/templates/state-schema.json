@@ -48,6 +48,11 @@
                     "items": { "type": "string" }
                   },
                   "acceptance": { "type": "string" },
+                  "depends_on": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "default": []
+                  },
                   "status": {
                     "type": "string",
                     "enum": ["pending", "in_progress", "completed", "failed"]

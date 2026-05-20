@@ -45,6 +45,7 @@ tasks:
     desc: <one-line description of what this task accomplishes>
     files: [path/one, path/two]
     acceptance: <how the Crewmate knows it's done>
+    depends_on: []
   - id: T2
     desc: ...
     files: [...]
@@ -57,6 +58,8 @@ constraints:
 ```
 
 Task ids be `T1`, `T2`, `T3`... in execution order. If a later revision adds a task between T2 and T3, name it `T2a` rather than renumberin'.
+
+`depends_on` lists the ids of tasks that must be completed before this task can start. Tasks with no dependencies get `depends_on: []` and may run concurrently with other zero-dep tasks. Declare dependencies conservatively — only when a task genuinely needs a prior task's output to exist.
 
 Before ye return, sanity-check yer plan:
 
