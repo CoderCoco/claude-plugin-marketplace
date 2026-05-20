@@ -419,3 +419,76 @@ class TestRunTask:
              patch("swarm_executor.save_state"):
             result = sut.run_task(task, args, state, state_lock, git_lock)
         assert result.startswith("replan:")
+
+
+# ---------------------------------------------------------------------------
+# Parallel building phase
+# ---------------------------------------------------------------------------
+
+class TestRunBuildingPhase:
+    def _state_with_tasks(self, tmp_path, task_specs):
+        """task_specs: list of (id, depends_on, status)"""
+        tasks = [
+            {"id": tid, "desc": f"do {tid}", "files": [], "acceptance": "done",
+             "status": st, "depends_on": deps}
+            for tid, deps, st in task_specs
+        ]
+        state = {
+            "issue": 1, "repo": "o/r", "title": "t", "branch": "b",
+            "started_at": "2026-01-01T00:00:00Z",
+            "phase": "building",
+            "plan": {"tasks": tasks, "revision": 1},
+            "current_task": tasks[0]["id"] if tasks else None,
+            "quartermaster_attempts": {},
+            "handoff_log": []
+        }
+        sf = tmp_path / "state.json"
+        sf.write_text(json.dumps(state))
+        return sf, state
+
+    def test_single_task_completes_and_marks_done(self, tmp_path):
+        sf, state = self._state_with_tasks(tmp_path, [("T1", [], "pending")])
+        args = MagicMock()
+        args.state = sf
+        args.swarm_scripts = tmp_path / "scripts"
+        (tmp_path / "scripts").mkdir()
+        state_lock = threading.Lock()
+
+        with patch("swarm_executor.run_task", return_value="completed"), \
+             patch("swarm_executor.run_script"), \
+             patch("swarm_executor.load_state", side_effect=[
+                 {**state, "plan": {**state["plan"],
+                  "tasks": [{**state["plan"]["tasks"][0], "status": "completed"}]}},
+             ]):
+            sut.run_building_phase(args, state, state_lock)
+
+        assert state["phase"] == "done"
+
+    def test_two_independent_tasks_run_concurrently(self, tmp_path):
+        sf, state = self._state_with_tasks(tmp_path, [
+            ("T1", [], "pending"), ("T2", [], "pending")
+        ])
+        args = MagicMock()
+        args.state = sf
+        args.swarm_scripts = tmp_path / "scripts"
+        (tmp_path / "scripts").mkdir()
+        state_lock = threading.Lock()
+        dispatch_order = []
+
+        def fake_run_task(task, *a, **kw):
+            dispatch_order.append(task["id"])
+            for t in state["plan"]["tasks"]:
+                if t["id"] == task["id"]:
+                    t["status"] = "completed"
+            return "completed"
+
+        completed_state = {**state, "plan": {**state["plan"],
+            "tasks": [{"id": "T1", "desc": "x", "depends_on": [], "status": "completed"},
+                      {"id": "T2", "desc": "y", "depends_on": [], "status": "completed"}]}}
+
+        with patch("swarm_executor.run_task", side_effect=fake_run_task), \
+             patch("swarm_executor.run_script"), \
+             patch("swarm_executor.load_state", return_value=completed_state):
+            sut.run_building_phase(args, state, state_lock)
+
+        assert set(dispatch_order) == {"T1", "T2"}

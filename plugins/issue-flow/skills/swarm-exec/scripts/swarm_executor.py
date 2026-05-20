@@ -422,14 +422,134 @@ def run_task(
 
 
 # ---------------------------------------------------------------------------
-# Main (placeholder — expanded in later tasks)
+# Building phase — parallel scheduler
+# ---------------------------------------------------------------------------
+
+def _replan(
+    args: argparse.Namespace,
+    state: dict,
+    state_lock: threading.Lock,
+    reason: str,
+) -> None:
+    """Re-dispatch Navigator with failure context and update state."""
+    agent_dir = args.swarm_scripts.parent.parent.parent / "agents"
+    completed_ids = [t["id"] for t in state["plan"]["tasks"] if t["status"] == "completed"]
+    prev_plan = json.dumps(state["plan"], indent=2)
+    issue_body = args.issue_body_file.read_text()
+
+    raw = (agent_dir / "navigator.md").read_text()
+    instructions = strip_frontmatter(raw)
+    prompt = (
+        f"{instructions}\n\n---\n\n"
+        f"Issue #{args.issue}:\n\n{issue_body}\n\n"
+        f"REVISION REQUIRED. Previous plan:\n{prev_plan}\n\n"
+        f"Failure context: {reason}\n\n"
+        f"Already completed (preserve, do not redo): {completed_ids}\n"
+        f"Produce a revised plan (revision: {state['plan'].get('revision', 1) + 1})."
+    )
+
+    run_script(args.swarm_scripts, "append-handoff.sh",
+               str(args.state), "Captain", "Navigator",
+               f"re-plan: {reason[:60]}", "dispatched")
+
+    _out, plan_yaml = dispatch_agent(
+        "navigator", prompt, args.worktree, args.timeout, "PLAN"
+    )
+
+    tasks = plan_yaml.get("tasks") or []
+    for t in tasks:
+        t.setdefault("status", "pending")
+        t.setdefault("depends_on", [])
+        if t["id"] in completed_ids:
+            t["status"] = "completed"
+    plan_yaml["tasks"] = tasks
+
+    plan_file = args.state.parent / f"plan-{args.issue}.json"
+    plan_file.write_text(json.dumps(plan_yaml, indent=2))
+    run_script(args.swarm_scripts, "set-plan.sh", str(args.state), str(plan_file))
+
+    updated = load_state(args.state)
+    state.update(updated)
+
+    run_script(args.swarm_scripts, "append-handoff.sh",
+               str(args.state), "Navigator", "Captain",
+               f"revised plan, revision {plan_yaml.get('revision', '?')}", "ok")
+
+
+def run_building_phase(
+    args: argparse.Namespace,
+    state: dict,
+    state_lock: threading.Lock,
+) -> None:
+    git_lock = threading.Lock()
+
+    while True:
+        tasks = state["plan"]["tasks"]
+        all_done = all(t["status"] in ("completed", "failed") for t in tasks)
+        if all_done:
+            break
+
+        ready = compute_ready_set(tasks)
+
+        if not ready:
+            failed_ids = [t["id"] for t in tasks if t["status"] == "failed"]
+            raise RuntimeError(
+                f"No tasks ready but work remains. Failed deps may be blocking: {failed_ids}"
+            )
+
+        replan_reason: str | None = None
+
+        with ThreadPoolExecutor(max_workers=len(ready)) as pool:
+            futures: dict[Future, dict] = {
+                pool.submit(run_task, task, args, state, state_lock, git_lock): task
+                for task in ready
+            }
+            for future in as_completed(futures):
+                task = futures[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    raise RuntimeError(f"Task {task['id']} raised: {e}") from e
+
+                if result == "handoff":
+                    print(f"\nTask {task['id']} handed off to user. Halting.", file=sys.stderr)
+                    sys.exit(1)
+
+                if result.startswith("replan:") and replan_reason is None:
+                    replan_reason = result[len("replan:"):]
+
+        if replan_reason:
+            _replan(args, state, state_lock, replan_reason)
+
+        updated = load_state(args.state)
+        state.update(updated)
+
+    run_script(args.swarm_scripts, "update-state.sh", str(args.state),
+               '.phase = "done" | .current_task = null')
+    state["phase"] = "done"
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     state_lock = threading.Lock()
     state = load_state(args.state)
-    print(f"[swarm-exec] Loaded state: phase={state['phase']}", file=sys.stderr)
+
+    if state["phase"] == "planning":
+        run_planning_phase(args, state, state_lock)
+        state = load_state(args.state)
+
+    if state["phase"] == "building":
+        run_building_phase(args, state, state_lock)
+        state = load_state(args.state)
+
+    if state["phase"] == "done":
+        print("[swarm-exec] Voyage complete.", file=sys.stderr)
+        return 0
+
     return 0
 
 
