@@ -155,10 +155,11 @@ The Navigator replies with a `### PLAN ... ### END PLAN` block. Parse it into a 
 }
 ```
 
-Write it to a file (e.g. `/tmp/swarm-plan-<N>.json`) using the `Write` tool, then persist into state via the bundled helper:
+Write it to a file (e.g. `${CLAUDE_PLUGIN_DATA}/swarm/${OWNER}/${REPO}/plan-<N>.json`) using the `Write` tool, then persist into state via the bundled helper:
 
 ```bash
-bash "${CLAUDE_SKILL_DIR}/scripts/set-plan.sh" "$STATE" "/tmp/swarm-plan-<N>.json"
+PLAN_FILE="${CLAUDE_PLUGIN_DATA}/swarm/${OWNER}/${REPO}/plan-<N>.json"
+bash "${CLAUDE_SKILL_DIR}/scripts/set-plan.sh" "$STATE" "$PLAN_FILE"
 ```
 
 The helper uses `jq --argjson plan "$(cat <file>)"` internally, so embedded quotes, backslashes, or newlines in the Navigator's text are safe. It also sets `.phase = "building"` and `.current_task = .plan.tasks[0].id` in the same atomic write, and defaults every task's `.status` to `"pending"`.
@@ -291,7 +292,7 @@ If a Crewmate returns `plan_problem`, or the user picks "re-plan" in Step 7's es
 - the discovered constraint,
 - which tasks have already completed (the Navigator must preserve those ids and not duplicate work).
 
-Persist the new plan the same way as Step 5 — write the JSON to `/tmp/swarm-plan-<N>.json` (with `revision: N+1`) and run `bash "${CLAUDE_SKILL_DIR}/scripts/set-plan.sh" "$STATE" "/tmp/swarm-plan-<N>.json"`. After the script writes, manually re-mark any already-completed task statuses back to `"completed"` (the helper defaults every task to `"pending"`):
+Persist the new plan the same way as Step 5 — write the JSON to `${CLAUDE_PLUGIN_DATA}/swarm/${OWNER}/${REPO}/plan-<N>.json` (with `revision: N+1`) and run `bash "${CLAUDE_SKILL_DIR}/scripts/set-plan.sh" "$STATE" "$PLAN_FILE"`. After the script writes, manually re-mark any already-completed task statuses back to `"completed"` (the helper defaults every task to `"pending"`):
 
 ```bash
 for TID in <ids of already-completed tasks>; do
