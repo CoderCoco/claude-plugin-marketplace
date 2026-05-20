@@ -180,3 +180,41 @@ class TestComputeReadySet:
     def test_in_progress_not_included(self):
         tasks = self._tasks([("T1", [], "in_progress")])
         assert sut.compute_ready_set(tasks) == []
+
+
+# ---------------------------------------------------------------------------
+# Block parser and agent file utilities
+# ---------------------------------------------------------------------------
+
+class TestExtractBlock:
+    def test_extracts_simple_block(self):
+        output = "Some preamble\n### PLAN\nkey: value\n### END PLAN\nTrailing text"
+        result = sut.extract_block(output, "PLAN")
+        assert result == "key: value"
+
+    def test_returns_none_on_miss(self):
+        assert sut.extract_block("no block here", "PLAN") is None
+
+    def test_multiline_content(self):
+        output = "### CREW_REPORT\ntask_id: T1\nstatus: completed\n### END CREW_REPORT"
+        result = sut.extract_block(output, "CREW_REPORT")
+        assert "task_id: T1" in result
+        assert "status: completed" in result
+
+    def test_extracts_yaml_parseable_content(self):
+        output = "### VERDICT\ntask_id: T1\nstatus: PASS\nfixes_needed: []\n### END VERDICT"
+        raw = sut.extract_block(output, "VERDICT")
+        parsed = yaml.safe_load(raw)
+        assert parsed["status"] == "PASS"
+        assert parsed["fixes_needed"] == []
+
+
+class TestStripFrontmatter:
+    def test_strips_yaml_header(self):
+        text = "---\nname: navigator\ndescription: foo\n---\nActual content here"
+        result = sut.strip_frontmatter(text)
+        assert result == "Actual content here"
+
+    def test_no_frontmatter_unchanged(self):
+        text = "Just the content"
+        assert sut.strip_frontmatter(text) == "Just the content"

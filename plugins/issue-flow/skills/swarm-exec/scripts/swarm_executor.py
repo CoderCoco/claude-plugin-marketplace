@@ -114,6 +114,22 @@ def compute_ready_set(tasks: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Structured block parsing and agent file utilities
+# ---------------------------------------------------------------------------
+
+def extract_block(output: str, tag: str) -> str | None:
+    """Extract content between ### TAG and ### END TAG."""
+    pattern = rf"### {re.escape(tag)}\n(.*?)\n### END {re.escape(tag)}"
+    m = re.search(pattern, output, re.DOTALL)
+    return m.group(1).strip() if m else None
+
+
+def strip_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter (--- ... ---) from agent definition files."""
+    return re.sub(r"^---\n.*?\n---\n", "", text, flags=re.DOTALL, count=1).strip()
+
+
+# ---------------------------------------------------------------------------
 # Main (placeholder — expanded in later tasks)
 # ---------------------------------------------------------------------------
 
