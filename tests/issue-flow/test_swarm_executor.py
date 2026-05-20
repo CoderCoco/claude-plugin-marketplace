@@ -307,3 +307,115 @@ class TestValidatePlan:
         tasks = [{"id": "T1", "desc": "x", "depends_on": ["T99"]}]
         with pytest.raises(ValueError, match="unknown depends_on: T99"):
             sut.validate_plan({}, tasks)
+
+
+# ---------------------------------------------------------------------------
+# Per-task execution
+# ---------------------------------------------------------------------------
+
+class TestBuildCrewmatePrompt:
+    def test_includes_task_spec(self, tmp_path):
+        agent_dir = tmp_path / "agents"
+        agent_dir.mkdir()
+        (agent_dir / "crewmate.md").write_text("---\nname: crewmate\n---\nDo the work.")
+        task = {"id": "T1", "desc": "Add foo", "files": ["src/foo.py"], "acceptance": "foo exists"}
+        prompt = sut.build_crewmate_prompt(agent_dir, task, fixes_needed=None)
+        assert "Do the work." in prompt
+        assert "T1" in prompt
+        assert "Add foo" in prompt
+
+    def test_includes_fixes_needed_when_present(self, tmp_path):
+        agent_dir = tmp_path / "agents"
+        agent_dir.mkdir()
+        (agent_dir / "crewmate.md").write_text("---\nname: crewmate\n---\nInstructions.")
+        task = {"id": "T1", "desc": "x", "files": [], "acceptance": "y"}
+        prompt = sut.build_crewmate_prompt(agent_dir, task, fixes_needed=["Fix the null case"])
+        assert "Fix the null case" in prompt
+
+
+class TestCommitTask:
+    def test_calls_git_add_and_commit(self, tmp_path):
+        task = {"id": "T2", "desc": "Implement the feature", "depends_on": []}
+        files_changed = [{"path": "src/foo.py"}, {"path": "tests/test_foo.py"}]
+        git_lock = threading.Lock()
+        calls = []
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            r = MagicMock()
+            r.returncode = 0
+            return r
+        with patch("swarm_executor.subprocess.run", side_effect=fake_run):
+            sut.commit_task(task, files_changed, 42, tmp_path, git_lock)
+        assert calls[0] == ["git", "add", "src/foo.py", "tests/test_foo.py"]
+        assert calls[1][0:2] == ["git", "commit"]
+        commit_msg = calls[1][calls[1].index("-m") + 1]
+        assert "T2" in commit_msg
+        assert "Refs #42" in commit_msg
+        assert "Co-Authored-By" in commit_msg
+
+
+class TestRunTask:
+    def _make_args(self, tmp_path):
+        state_file = tmp_path / "state.json"
+        state = {
+            "issue": 42, "repo": "o/r", "title": "t", "branch": "b",
+            "started_at": "2026-01-01T00:00:00Z",
+            "phase": "building",
+            "plan": {"tasks": [{"id": "T1", "desc": "do it", "files": [], "acceptance": "done",
+                                 "status": "pending", "depends_on": []}]},
+            "current_task": "T1",
+            "quartermaster_attempts": {},
+            "handoff_log": []
+        }
+        state_file.write_text(json.dumps(state))
+        args = MagicMock()
+        args.state = state_file
+        args.worktree = tmp_path
+        args.timeout = 30
+        args.issue = 42
+        args.swarm_scripts = tmp_path / "scripts"
+        (tmp_path / "scripts").mkdir()
+        # Create stub bash scripts that do nothing
+        for name in ["append-handoff.sh", "update-state.sh"]:
+            script = tmp_path / "scripts" / name
+            script.write_text("#!/usr/bin/env bash\nexit 0\n")
+            script.chmod(0o755)
+        # Create stub agent files
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "crewmate.md").write_text("---\nname: crewmate\n---\nDo the task.")
+        (agents_dir / "quartermaster.md").write_text("---\nname: qm\n---\nReview the task.")
+        # Patch agent_dir resolution: swarm_scripts.parent.parent.parent / "agents"
+        args.swarm_scripts.parent.parent.parent  # evaluates on MagicMock
+        return args, json.loads(state_file.read_text())
+
+    def test_pass_flow_returns_completed(self, tmp_path):
+        args, state = self._make_args(tmp_path)
+        state_lock = threading.Lock()
+        git_lock = threading.Lock()
+        task = state["plan"]["tasks"][0]
+        crew_report = {"status": "completed", "files_changed": [{"path": "src/foo.py"}], "notes": ""}
+        verdict = {"status": "PASS", "fixes_needed": [], "checks": []}
+        with patch("swarm_executor.dispatch_agent", side_effect=[
+                       ("raw", crew_report), ("raw", verdict)]), \
+             patch("swarm_executor.build_crewmate_prompt", return_value="crewmate prompt"), \
+             patch("swarm_executor.build_quartermaster_prompt", return_value="qm prompt"), \
+             patch("swarm_executor.run_script"), \
+             patch("swarm_executor.commit_task"), \
+             patch("swarm_executor.save_state"):
+            result = sut.run_task(task, args, state, state_lock, git_lock)
+        assert result == "completed"
+
+    def test_plan_problem_returns_replan(self, tmp_path):
+        args, state = self._make_args(tmp_path)
+        state_lock = threading.Lock()
+        git_lock = threading.Lock()
+        task = state["plan"]["tasks"][0]
+        crew_report = {"status": "plan_problem", "plan_problem": "file missing",
+                       "files_changed": [], "notes": ""}
+        with patch("swarm_executor.dispatch_agent", return_value=("raw", crew_report)), \
+             patch("swarm_executor.build_crewmate_prompt", return_value="crewmate prompt"), \
+             patch("swarm_executor.run_script"), \
+             patch("swarm_executor.save_state"):
+            result = sut.run_task(task, args, state, state_lock, git_lock)
+        assert result.startswith("replan:")
