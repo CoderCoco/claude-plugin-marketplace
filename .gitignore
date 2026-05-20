@@ -45,3 +45,9 @@ next-env.d.ts
 
 # git worktrees
 .claude/worktrees/
+
+# python
+__pycache__/
+*.pyc
+venv/
+.venv/
