@@ -194,15 +194,22 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
      bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
        '(.plan.tasks[] | select(.id == "<TID>")).status = "completed"'
      ```
-     Then **commit this task's diff** with a Conventional Commits message. One commit per PASS, no exceptions — this is how the voyage history stays atomic and bisectable.
 
+     Then **commit this task's diff**. One commit per PASS, no exceptions — this is how the voyage history stays atomic and bisectable.
+
+     Before composin' the first commit of a voyage, **read the shared reference** at `${CLAUDE_PLUGIN_ROOT}/references/conventional-commits.md` (fallback: `${CLAUDE_SKILL_DIR}/../../references/conventional-commits.md`) for the full Conventional Commits rules used across the issue-flow plugin — type list, scope conventions, body shape, footer requirements, forbidden flags, and the heredoc template. Use the `Read` tool, not `cat`.
+
+     The swarm-specific bits the reference does NOT cover:
+
+     - The subject body uses the format `T<N> - <one-line task desc>` where `T<N>` is the plan task id and the desc is the task's `desc` field (trimmed under 72 chars total).
+     - File staging uses exactly the paths from `CREW_REPORT.files_changed[].path`.
+     - The body's issue-reference line is `Refs #<ISSUE_NUMBER>` (per-task commits never use `Closes`).
+
+     Minimal call shape:
      ```bash
-     # Stage exactly the files the Crewmate touched (from CREW_REPORT.files_changed[].path).
-     # Use explicit names — do NOT use `git add .` or `git add -A`.
-     git add <file1> <file2> ...
-
-     git commit -m "$(cat <<COMMITMSG
-     <type>(<scope>): T<N> - <one-line task desc>
+     git add <files from CREW_REPORT>
+     git commit -m "$(cat <<'COMMITMSG'
+     <type>(<scope>): T<N> - <task desc>
 
      Refs #<ISSUE_NUMBER>.
 
@@ -211,20 +218,12 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
      )"
      ```
 
-     Conventional Commits guidance:
-     - `<type>`: pick the best fit for the task — `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`. Default to `feat` for new behaviour, `fix` for bug fixes, `refactor` for restructuring with no behaviour change.
-     - `<scope>`: the package / module / area the task changed. Optional — omit (and drop the parens) if the task spans scopes or there's no obvious one. Match what existing commits in the repo use.
-     - `T<N>` is the task id from the plan (e.g. `T1`, `T2a`).
-     - One-line task desc is the task's `desc` field, trimmed so the subject line fits under 72 chars.
-     - Use `Refs #<N>` (NOT `Closes #<N>`) on per-task commits — the closing keyword belongs on the PR body so the issue closes exactly once on merge, not partway through.
-     - Do NOT `--no-verify`, do NOT `--no-gpg-sign`. If a hook fails, surface the failure and HALT — same escalation as a Quartermaster FAIL on a 4th attempt.
-
      If the commit succeeds, log it and continue to the next task in Step 6:
      ```bash
      bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "git" "commit T<N>: $(git rev-parse --short HEAD)" "ok"
      ```
 
-     If the commit FAILS (pre-commit hook, signing, anything) -> HALT and surface the error. Do not retry blindly, do not bypass hooks.
+     If the commit FAILS (pre-commit hook, signing, anything) -> HALT and surface the error. Do not retry blindly, do not bypass hooks (the reference spells out the forbidden flags).
 
    - **FAIL** AND attempt count `<= 2` (i.e., this was attempt 1 or 2 out of 3) -> loop back to Step 6 (re-dispatch the same Crewmate with `fixes_needed`). Bump the handoff log accordingly.
 
