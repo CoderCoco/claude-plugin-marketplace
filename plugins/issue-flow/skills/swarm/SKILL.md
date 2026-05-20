@@ -1,7 +1,7 @@
 ---
 name: swarm
 description: Use when the user wants to work on a GitHub issue with a coordinated crew of specialised sub-agents. Trigger whenever the user says "swarm issue #N", "/swarm N", "build issue N with the crew", "use the pirate crew on N", or otherwise asks to delegate an issue across a planner / builder / tester rather than doing it inline. Captain (the main agent) reads the issue, enters a worktree, moves the issue to In Progress on the project board, dispatches Navigator for a plan, then Crewmate per task with Quartermaster verifying each, persisting state to disk and printing a final voyage-log table when done. Optional argument is the issue number. Use proactively when the user signals they want sub-agent decomposition rather than the inline work-on flow.
-allowed-tools: EnterWorktree ExitWorktree Bash(gh:*) Bash(bash *swarm-state*) Bash(bash *swarm/scripts/*)
+allowed-tools: EnterWorktree ExitWorktree Bash(gh:*) Bash(bash *swarm/scripts/*)
 ---
 
 # Swarm (Pirate Crew)
@@ -113,7 +113,7 @@ STATE=$(bash "${CLAUDE_SKILL_DIR}/scripts/init-state.sh" <N> "$OWNER/$REPO" "<is
 
 The script prints the state-file path. If the file already exists, it exits with code 2 — **that's the resume signal**:
 
-- Read the existing state file: `cat .claude/swarm-state/issue-<N>.json`
+- Read the existing state file using the `Read` tool with path `$STATE`.
 - Tell the user concisely: "Resumin' voyage on issue #N. Phase: <phase>. Current task: <id or none>."
 - Skip ahead to the right step:
   - phase `planning` -> Step 5

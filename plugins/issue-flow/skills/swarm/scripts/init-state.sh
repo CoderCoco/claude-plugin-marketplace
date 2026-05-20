@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Initialise a swarm state file for an issue.
 # Usage: init-state.sh <ISSUE_NUMBER> <REPO> <TITLE> <BRANCH>
-# Writes .claude/swarm-state/issue-<N>.json relative to the current working
-# directory (the worktree root). Refuses to overwrite an existing state file
-# unless SWARM_FORCE=1 is set.
+# Writes ${CLAUDE_PLUGIN_DATA}/swarm/<OWNER>/<REPO>/issue-<N>.json.
+# Refuses to overwrite an existing state file unless SWARM_FORCE=1 is set.
 set -euo pipefail
 
 ISSUE="${1:-}"
@@ -16,7 +15,7 @@ if [ -z "$ISSUE" ] || [ -z "$REPO" ] || [ -z "$TITLE" ] || [ -z "$BRANCH" ]; the
   exit 1
 fi
 
-STATE_DIR=".claude/swarm-state"
+STATE_DIR="${CLAUDE_PLUGIN_DATA}/swarm/${REPO}"
 STATE_FILE="${STATE_DIR}/issue-${ISSUE}.json"
 
 mkdir -p "$STATE_DIR"

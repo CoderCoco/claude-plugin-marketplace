@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Apply a jq filter to a swarm state file atomically.
 # Usage: update-state.sh <STATE_FILE> <JQ_FILTER>
-# Example: update-state.sh .claude/swarm-state/issue-42.json '.phase = "building"'
+# Example: update-state.sh "$STATE" '.phase = "building"'
 set -euo pipefail
 
 STATE_FILE="${1:-}"
