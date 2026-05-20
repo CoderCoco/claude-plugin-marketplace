@@ -65,6 +65,55 @@ def run_script(swarm_scripts: Path, script_name: str, *args: str) -> subprocess.
 
 
 # ---------------------------------------------------------------------------
+# Dependency graph
+# ---------------------------------------------------------------------------
+
+def detect_cycles(tasks: list[dict]) -> list[str] | None:
+    """Return a cycle as a list of task ids, or None if graph is acyclic."""
+    task_ids = {t["id"] for t in tasks}
+    deps = {t["id"]: set(t.get("depends_on") or []) for t in tasks}
+    visited: set[str] = set()
+    path: list[str] = []
+    path_set: set[str] = set()
+
+    def dfs(node: str) -> list[str] | None:
+        if node in path_set:
+            start = path.index(node)
+            return path[start:] + [node]
+        if node in visited:
+            return None
+        visited.add(node)
+        path.append(node)
+        path_set.add(node)
+        for dep in deps.get(node, set()):
+            if dep not in task_ids:
+                continue
+            result = dfs(dep)
+            if result:
+                return result
+        path.pop()
+        path_set.discard(node)
+        return None
+
+    for tid in task_ids:
+        if tid not in visited:
+            cycle = dfs(tid)
+            if cycle:
+                return cycle
+    return None
+
+
+def compute_ready_set(tasks: list[dict]) -> list[dict]:
+    """Tasks eligible to start: pending and all depends_on are completed."""
+    completed = {t["id"] for t in tasks if t["status"] == "completed"}
+    return [
+        t for t in tasks
+        if t["status"] == "pending"
+        and all(dep in completed for dep in (t.get("depends_on") or []))
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Main (placeholder — expanded in later tasks)
 # ---------------------------------------------------------------------------
 
