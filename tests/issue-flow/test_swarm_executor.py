@@ -218,3 +218,60 @@ class TestStripFrontmatter:
     def test_no_frontmatter_unchanged(self):
         text = "Just the content"
         assert sut.strip_frontmatter(text) == "Just the content"
+
+
+# ---------------------------------------------------------------------------
+# Agent dispatch
+# ---------------------------------------------------------------------------
+
+class TestDispatchAgent:
+    GOOD_OUTPUT = "Some text\n### PLAN\ntasks: []\nsummary: ok\n### END PLAN\nDone."
+
+    def _run(self, returncode=0, stdout=GOOD_OUTPUT, stderr="", timeout=False):
+        if timeout:
+            return patch("swarm_executor.subprocess.run",
+                         side_effect=subprocess.TimeoutExpired("claude", 300))
+        r = MagicMock()
+        r.returncode = returncode
+        r.stdout = stdout
+        r.stderr = stderr
+        return patch("swarm_executor.subprocess.run", return_value=r)
+
+    def test_success_returns_parsed_yaml(self):
+        with self._run():
+            raw, parsed = sut.dispatch_agent(
+                "navigator", "prompt", Path("/tmp"), 300, "PLAN"
+            )
+        assert parsed["tasks"] == []
+        assert parsed["summary"] == "ok"
+
+    def test_missing_block_retries_with_suffix(self):
+        no_block = "No plan block here."
+        good = "### PLAN\ntasks: []\nsummary: ok\n### END PLAN"
+        calls = [
+            MagicMock(returncode=0, stdout=no_block, stderr=""),
+            MagicMock(returncode=0, stdout=good, stderr=""),
+        ]
+        with patch("swarm_executor.subprocess.run", side_effect=calls):
+            raw, parsed = sut.dispatch_agent(
+                "navigator", "prompt", Path("/tmp"), 300, "PLAN"
+            )
+        assert parsed["summary"] == "ok"
+
+    def test_non_zero_exit_retries_once_then_raises(self):
+        fail = MagicMock(returncode=1, stdout="", stderr="fatal error")
+        with patch("swarm_executor.subprocess.run", return_value=fail):
+            with pytest.raises(RuntimeError, match="exited 1"):
+                sut.dispatch_agent("navigator", "prompt", Path("/tmp"), 300, "PLAN")
+
+    def test_timeout_on_both_attempts_raises(self):
+        with patch("swarm_executor.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("claude", 300)):
+            with pytest.raises(RuntimeError, match="timed out"):
+                sut.dispatch_agent("navigator", "prompt", Path("/tmp"), 300, "PLAN")
+
+    def test_two_consecutive_missing_blocks_raises(self):
+        no_block = MagicMock(returncode=0, stdout="no block", stderr="")
+        with patch("swarm_executor.subprocess.run", return_value=no_block):
+            with pytest.raises(RuntimeError, match="Missing ### PLAN"):
+                sut.dispatch_agent("navigator", "prompt", Path("/tmp"), 300, "PLAN")

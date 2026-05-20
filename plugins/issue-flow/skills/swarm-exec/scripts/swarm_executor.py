@@ -130,6 +130,67 @@ def strip_frontmatter(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Agent dispatch
+# ---------------------------------------------------------------------------
+
+AGENT_TOOLS = {
+    "navigator": "Read,Grep,Glob,Bash,WebFetch",
+    "crewmate": "Read,Write,Edit,Bash,Grep,Glob",
+    "quartermaster": "Read,Grep,Glob,Bash",
+}
+
+
+def dispatch_agent(
+    agent: str,
+    prompt: str,
+    worktree: Path,
+    timeout: int,
+    tag: str,
+) -> tuple[str, dict]:
+    """
+    Call claude -p and extract the structured block.
+    Retries once on non-zero exit or missing block.
+    Returns (raw_output, parsed_yaml_dict).
+    Raises RuntimeError if both attempts fail.
+    """
+    tools = AGENT_TOOLS[agent]
+
+    for attempt in range(2):
+        p = prompt if attempt == 0 else (
+            prompt + f"\n\nIMPORTANT: Your previous response was missing the required "
+            f"### {tag} block. You MUST include a ### {tag} ... ### END {tag} block."
+        )
+        try:
+            result = subprocess.run(
+                ["claude", "-p", p, "--allowedTools", tools],
+                capture_output=True, text=True, timeout=timeout,
+                cwd=str(worktree)
+            )
+        except subprocess.TimeoutExpired:
+            if attempt == 0:
+                continue
+            raise RuntimeError(f"claude -p timed out after {timeout}s on both attempts")
+
+        if result.returncode != 0:
+            if attempt == 0:
+                continue
+            raise RuntimeError(f"claude -p exited {result.returncode}:\n{result.stderr}")
+
+        block = extract_block(result.stdout, tag)
+        if block is None:
+            if attempt == 0:
+                continue
+            raise RuntimeError(
+                f"Missing ### {tag} block after two attempts. Output:\n{result.stdout[:500]}"
+            )
+
+        parsed = yaml.safe_load(block)
+        return result.stdout, parsed
+
+    raise RuntimeError("Unreachable")
+
+
+# ---------------------------------------------------------------------------
 # Main (placeholder — expanded in later tasks)
 # ---------------------------------------------------------------------------
 
