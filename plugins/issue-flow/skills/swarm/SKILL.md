@@ -194,7 +194,37 @@ Per task. The hard cap is **3 Crewmate attempts per task** — the initial build
      bash "${CLAUDE_SKILL_DIR}/scripts/update-state.sh" "$STATE" \
        '(.plan.tasks[] | select(.id == "<TID>")).status = "completed"'
      ```
-     Continue to the next task in Step 6.
+     Then **commit this task's diff** with a Conventional Commits message. One commit per PASS, no exceptions — this is how the voyage history stays atomic and bisectable.
+
+     ```bash
+     # Stage exactly the files the Crewmate touched (from CREW_REPORT.files_changed[].path).
+     # Use explicit names — do NOT use `git add .` or `git add -A`.
+     git add <file1> <file2> ...
+
+     git commit -m "$(cat <<COMMITMSG
+     <type>(<scope>): T<N> - <one-line task desc>
+
+     Refs #<ISSUE_NUMBER>.
+
+     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     COMMITMSG
+     )"
+     ```
+
+     Conventional Commits guidance:
+     - `<type>`: pick the best fit for the task — `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`. Default to `feat` for new behaviour, `fix` for bug fixes, `refactor` for restructuring with no behaviour change.
+     - `<scope>`: the package / module / area the task changed. Optional — omit (and drop the parens) if the task spans scopes or there's no obvious one. Match what existing commits in the repo use.
+     - `T<N>` is the task id from the plan (e.g. `T1`, `T2a`).
+     - One-line task desc is the task's `desc` field, trimmed so the subject line fits under 72 chars.
+     - Use `Refs #<N>` (NOT `Closes #<N>`) on per-task commits — the closing keyword belongs on the PR body so the issue closes exactly once on merge, not partway through.
+     - Do NOT `--no-verify`, do NOT `--no-gpg-sign`. If a hook fails, surface the failure and HALT — same escalation as a Quartermaster FAIL on a 4th attempt.
+
+     If the commit succeeds, log it and continue to the next task in Step 6:
+     ```bash
+     bash "${CLAUDE_SKILL_DIR}/scripts/append-handoff.sh" "$STATE" "Captain" "git" "commit T<N>: $(git rev-parse --short HEAD)" "ok"
+     ```
+
+     If the commit FAILS (pre-commit hook, signing, anything) -> HALT and surface the error. Do not retry blindly, do not bypass hooks.
 
    - **FAIL** AND attempt count `<= 2` (i.e., this was attempt 1 or 2 out of 3) -> loop back to Step 6 (re-dispatch the same Crewmate with `fixes_needed`). Bump the handoff log accordingly.
 
@@ -282,7 +312,7 @@ There is exactly ONE escape hatch: if the issue is a **trivial single-edit** —
 
 If ANY of those four fail, ye dispatch the full crew. When in doubt, dispatch.
 
-The escape hatch changes Steps 5-7 only. It does NOT change Step 9 (still print the voyage log, even if it's one row) and it does NOT change the "Once the voyage is done" footer rules below. Ye still do not auto-commit, do not auto-push, do not open a PR. The user invokes `/open-pr` (or `work-on`'s usual follow-up) when they're ready.
+The escape hatch changes Steps 5-7 only. It does NOT change Step 9 (still print the voyage log, even if it's one row). It also opts OUT of per-task commits — escape-hatch edits are single trivial changes that don't deserve their own commit; the user commits manually after reviewin'. Do not auto-push. Do not open a PR. The user invokes `/open-pr` (or `work-on`'s usual follow-up) when they're ready.
 
 ## Rationalisations the Captain WILL hear (and how to answer 'em)
 
@@ -323,6 +353,8 @@ All of these mean: stop, breathe, re-read the iron rules.
 
 ## Once the voyage is done
 
-Ye stay in the worktree. The user picks the next move (commit, `/open-pr`, etc.). Do not auto-commit. Do not auto-push. Do not ExitWorktree without bein' asked.
+Ye stay in the worktree. The crew has already produced one commit per PASS verdict (see Step 7.5), so the branch is ready for review. The user picks the next move (`/open-pr` to ship, more swarm runs, etc.). Do NOT auto-push. Do NOT open a PR yerself. Do NOT ExitWorktree without bein' asked.
+
+If a task FAILED out (3 Quartermaster FAILs followed by the user pickin' "skip" in Step 7's escalation), that task has NO commit — surface the skipped task explicitly in yer final reply so the user knows what's not on the branch.
 
 Fair winds.
