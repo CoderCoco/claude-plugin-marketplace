@@ -275,3 +275,35 @@ class TestDispatchAgent:
         with patch("swarm_executor.subprocess.run", return_value=no_block):
             with pytest.raises(RuntimeError, match="Missing ### PLAN"):
                 sut.dispatch_agent("navigator", "prompt", Path("/tmp"), 300, "PLAN")
+
+
+# ---------------------------------------------------------------------------
+# Planning phase
+# ---------------------------------------------------------------------------
+
+class TestBuildNavigatorPrompt:
+    def test_strips_frontmatter_and_appends_issue(self, tmp_path):
+        agent_dir = tmp_path / "agents"
+        agent_dir.mkdir()
+        (agent_dir / "navigator.md").write_text(
+            "---\nname: navigator\n---\nNavigator instructions here."
+        )
+        prompt = sut.build_navigator_prompt(agent_dir, 42, "The issue body text.")
+        assert "Navigator instructions here." in prompt
+        assert "Issue #42" in prompt
+        assert "The issue body text." in prompt
+        assert "---\nname: navigator" not in prompt
+
+
+class TestValidatePlan:
+    def test_valid_plan_passes(self):
+        tasks = [
+            {"id": "T1", "desc": "x", "depends_on": []},
+            {"id": "T2", "desc": "y", "depends_on": ["T1"]},
+        ]
+        sut.validate_plan({}, tasks)  # should not raise
+
+    def test_unknown_depends_on_raises(self):
+        tasks = [{"id": "T1", "desc": "x", "depends_on": ["T99"]}]
+        with pytest.raises(ValueError, match="unknown depends_on: T99"):
+            sut.validate_plan({}, tasks)

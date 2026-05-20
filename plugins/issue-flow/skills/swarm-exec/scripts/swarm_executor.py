@@ -191,6 +191,73 @@ def dispatch_agent(
 
 
 # ---------------------------------------------------------------------------
+# Planning phase
+# ---------------------------------------------------------------------------
+
+def build_navigator_prompt(agent_dir: Path, issue_number: int, issue_body: str) -> str:
+    raw = (agent_dir / "navigator.md").read_text()
+    instructions = strip_frontmatter(raw)
+    return f"{instructions}\n\n---\n\nIssue #{issue_number}:\n\n{issue_body}"
+
+
+def validate_plan(plan: dict, tasks: list[dict]) -> None:
+    """Raise ValueError if any depends_on references an unknown task id."""
+    task_ids = {t["id"] for t in tasks}
+    for t in tasks:
+        for dep in (t.get("depends_on") or []):
+            if dep not in task_ids:
+                raise ValueError(f"Task {t['id']} has unknown depends_on: {dep}")
+
+
+def run_planning_phase(
+    args: argparse.Namespace,
+    state: dict,
+    state_lock: threading.Lock,
+) -> None:
+    agent_dir = args.swarm_scripts.parent.parent.parent / "agents"
+    issue_body = args.issue_body_file.read_text()
+
+    run_script(args.swarm_scripts, "append-handoff.sh",
+               str(args.state), "Captain", "Navigator",
+               f"chart course for issue #{args.issue}", "dispatched")
+
+    prompt = build_navigator_prompt(agent_dir, args.issue, issue_body)
+    _stdout, plan_yaml = dispatch_agent(
+        "navigator", prompt, args.worktree, args.timeout, "PLAN"
+    )
+
+    tasks = plan_yaml.get("tasks") or []
+    for t in tasks:
+        t.setdefault("status", "pending")
+        t.setdefault("depends_on", [])
+    plan_yaml["tasks"] = tasks
+
+    validate_plan(plan_yaml, tasks)
+
+    cycle = detect_cycles(tasks)
+    if cycle:
+        raise RuntimeError(f"Circular dependency in plan: {' -> '.join(cycle)}")
+
+    plan_file = args.state.parent / f"plan-{args.issue}.json"
+    plan_file.write_text(json.dumps(plan_yaml, indent=2))
+    run_script(args.swarm_scripts, "set-plan.sh", str(args.state), str(plan_file))
+
+    updated = load_state(args.state)
+    state.update(updated)
+
+    run_script(args.swarm_scripts, "append-handoff.sh",
+               str(args.state), "Navigator", "Captain",
+               f"{len(tasks)} tasks, revision {plan_yaml.get('revision', 1)}", "ok")
+
+    open_qs = plan_yaml.get("open_questions") or []
+    if open_qs:
+        print("\nNavigator has open questions for you:")
+        for q in open_qs:
+            print(f"  ? {q}")
+        input("Press Enter when ready to continue...")
+
+
+# ---------------------------------------------------------------------------
 # Main (placeholder — expanded in later tasks)
 # ---------------------------------------------------------------------------
 
