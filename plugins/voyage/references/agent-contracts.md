@@ -107,8 +107,8 @@ comments:
     category: actionable | question | approval | nit | ambiguous
     file: src/webhook.ts        # only for actionable/nit
     line: 88                    # only for actionable/nit
-    fix_hint: return 404 not 500 for missing webhook id
-    reply_draft: |              # only for question/approval
+    fix_hint: return 404 not 500 for missing webhook id  # only for actionable/nit
+    reply_draft: |              # only for question
       The retry uses exponential backoff with jitter...
 copilot_present: true | false
 ### END TRIAGE

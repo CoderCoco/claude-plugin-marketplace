@@ -26,5 +26,5 @@ Rules:
 - Number options so the user can reply with "1" without paraphrasing.
 - Do NOT proceed after printing this. Exit the skill and wait for the next
   `/voyage <N>` invocation.
-- When the user responds, resume by updating `phase_status` appropriately
-  (e.g., `pending` to retry, `deleted` to skip a task) before re-running.
+- When the user responds, resume by updating state appropriately
+  (e.g., `phase_status=pending` to retry, or `task.status=skipped` to skip a task) before re-running.
