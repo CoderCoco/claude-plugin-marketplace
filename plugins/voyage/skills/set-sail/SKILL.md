@@ -107,7 +107,7 @@ For each VERDICT:
 
 **Halt format (load `references/halt-protocol.md`):**
 ```
-HEAVY SEAS — set-sail halted
+⚓ HEAVY SEAS — set-sail halted
 
   Reason: Task <name> failed 3 times. Last Quartermaster fixes_needed:
     - <fix 1>
