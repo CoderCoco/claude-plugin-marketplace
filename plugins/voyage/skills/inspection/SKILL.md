@@ -54,6 +54,7 @@ OTHER_FILES=$(git diff --name-only "$BASE_SHA"...HEAD | \
 Agent(first-mate, language=javascript, files=JS_FILES, diff_bundle=..., rubric=RUBRIC, declined=DECLINED)
 Agent(first-mate, language=python,     files=PY_FILES, diff_bundle=..., rubric=RUBRIC, declined=DECLINED)
 Agent(first-mate, language=go,         files=GO_FILES, ...)
+Agent(first-mate, language=rust,       files=RS_FILES, ...)
 Agent(first-mate, language=shell,      files=SH_FILES, ...)
 Agent(first-mate, language=general,    files=OTHER_FILES, ...)
 ```
