@@ -52,19 +52,21 @@ Parse the `### TRIAGE` / `### END TRIAGE` block.
 
 If any comment has `category: "ambiguous"`:
 ```bash
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" phase_status "halted"
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" halted_reason \
-  "Bosun found ambiguous comments — Captain must classify them."
-echo "⚓ HEAVY SEAS — parley halted"
-echo ""
-echo "  Reason: Bosun couldna classify these comments:"
-echo "$TRIAGE" | jq -r '.comments[] | select(.category == "ambiguous") | "    - \(.author): \(.reply_draft // "(no draft)")"'
-echo ""
-echo "  Yer options:"
-echo "    [1] Tell me how to handle each ambiguous comment"
-echo "    [2] Ignore ambiguous comments and continue"
-echo "    [3] Abandon voyage (state preserved)"
-exit 0
+AMBIGUOUS_COUNT=$(echo "$TRIAGE" | jq '[.comments[] | select(.category == "ambiguous")] | length')
+if [ "$AMBIGUOUS_COUNT" -gt 0 ]; then
+  bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" phase_status "halted"
+  bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" halted_reason \
+    "Bosun found ambiguous comments — Captain must classify them."
+  echo "⚓ HEAVY SEAS — parley halted"
+  echo ""
+  echo "  Reason: Bosun couldna classify these comments:"
+  echo "$TRIAGE" | jq -r '.comments[] | select(.category == "ambiguous") | "    - \(.author): \(.reply_draft // "(no draft)")"'
+  echo ""
+  echo "  Yer options:"
+  echo "    [1] Tell me how to handle each ambiguous comment"
+  echo "    [2] Ignore ambiguous comments and continue"
+  echo "    [3] Abandon voyage (state preserved)"
+  exit 0
 fi
 ```
 
