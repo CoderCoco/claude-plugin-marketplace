@@ -1,7 +1,7 @@
-# First Mate's Review Rubric
+# Systems Inspector's Review Rubric
 
-This file is the First Mate's living checklist. It is updated via
-`/mark-the-charts` when new pitfalls are discovered. Add entries; remove
+This file is the Systems Inspector's living checklist. It is updated via
+`/mission-debrief` when new pitfalls are discovered. Add entries; remove
 only by direct edit.
 
 ## What this covers
@@ -76,8 +76,8 @@ Logic that looks right but is wrong:
 
 ## Declined / Out-of-scope
 
-Findings that have been explicitly declined for this project. First Mate
-must NOT raise these. Populated via `/mark-the-charts`.
+Findings that have been explicitly declined for this project. Systems Inspector
+must NOT raise these. Populated via `/mission-debrief`.
 
 <!-- example entry:
 - summary: Vitest hoisting concern
