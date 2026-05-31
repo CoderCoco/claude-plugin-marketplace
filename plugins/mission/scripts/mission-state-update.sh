@@ -8,6 +8,7 @@
 #   pr_number           <integer as string>
 #   pr_url              <url string>
 #   pr_last_comment     <integer as string>
+#   pr_last_seen_at     <ISO 8601 timestamp string>
 #   pr_copilot          true|false
 #   pr_watcher          true|false
 #   plan_next_alpha     <integer as string>
@@ -52,6 +53,9 @@ case "$KEY" in
   pr_last_comment)
     jq --argjson v "$VALUE" --arg now "$NOW" \
       '.pr.last_comment_id_seen = $v | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;
+  pr_last_seen_at)
+    jq --arg v "$VALUE" --arg now "$NOW" \
+      '.pr.last_seen_at = $v | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;
   pr_copilot)
     jq --argjson v "$VALUE" --arg now "$NOW" \
       '.pr.copilot_was_requested = $v | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;

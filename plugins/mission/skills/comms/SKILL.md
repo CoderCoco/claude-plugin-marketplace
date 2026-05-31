@@ -14,21 +14,29 @@ approval), and re-request Copilot review after any push.
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 [ "$(echo "$STATE" | jq -r '.phase')" = "comms" ] || { echo "Not in comms phase"; exit 1; }
-cd "$(echo "$STATE" | jq -r '.branch.worktree_path')"
+WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 REPO=$(echo "$STATE" | jq -r '.issue.repo')
 PR_NUM=$(echo "$STATE" | jq -r '.pr.number')
-LAST_SEEN=$(echo "$STATE" | jq -r '.pr.last_comment_id_seen // 0')
+LAST_SEEN_AT=$(echo "$STATE" | jq -r '.pr.last_seen_at // "1970-01-01T00:00:00Z"')
 ```
+
+Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the mission worktree.
 
 ## Step 2: Fetch new comments
 
 ```bash
 COMMENTS=$(gh pr view "$PR_NUM" --repo "$REPO" \
   --json comments,reviews --jq "
-    [.comments[], (.reviews[]? | .comments[]?)] |
-    map(select(.databaseId > $LAST_SEEN)) |
-    sort_by(.databaseId)")
+    [
+      (.comments[] | {id: (.databaseId | tostring), author: .author.login, body, url, createdAt}),
+      (.reviews[]? | select(.body != \"\" and .body != null)
+        | {id: .id, author: .author.login, body, url, createdAt, isReview: true}),
+      (.reviews[]? | .comments[]?
+        | {id: (.databaseId | tostring), author: .author.login, body, url, createdAt})
+    ] |
+    map(select(.createdAt > \"$LAST_SEEN_AT\")) |
+    sort_by(.createdAt)")
 NEW_COUNT=$(echo "$COMMENTS" | jq length)
 ```
 
@@ -116,8 +124,8 @@ gh pr edit "$PR_NUM" --repo "$REPO" --add-reviewer Copilot 2>/dev/null || \
 ## Step 7: Update last_comment_id_seen
 
 ```bash
-MAX_ID=$(echo "$COMMENTS" | jq '[.[].databaseId] | max')
-bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" pr_last_comment "$MAX_ID"
+MAX_AT=$(echo "$COMMENTS" | jq -r '[.[].createdAt] | max')
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" pr_last_seen_at "$MAX_AT"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"comms\",\"event\":\"round_complete\",\"fixed\":$(echo "$TRIAGE" | jq '[.comments[] | select(.category == "actionable")] | length')}"
 ```
