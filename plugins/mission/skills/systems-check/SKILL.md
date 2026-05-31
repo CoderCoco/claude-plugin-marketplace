@@ -99,7 +99,7 @@ After the round, commit any PASSed repair tasks with:
 ```
 fix(<scope>): <name> — <finding summary>
 
-Refs #<ISSUE_NUM>
+Refs #$ISSUE_NUM
 ```
 
 **3g. Increment systems-check attempt counter:**
