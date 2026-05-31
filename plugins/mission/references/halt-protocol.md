@@ -3,28 +3,27 @@
 When a phase cannot continue autonomously, print this exact shape and exit.
 
 ```
-⚓ HEAVY SEAS — <phase-name> halted
+🚨 ABORT SEQUENCE — <phase-name> halted
 
   Reason: <plain-English explanation — one or two sentences>
 
   Where we are:
-    <one-line state summary, e.g. "Issue #42, set-sail phase, task Drake failed 3 times">
+    <one-line state summary, e.g. "Issue #42, liftoff phase, task Drake failed 3 times">
 
-  Yer options:
+  Your options:
     [1] <plain-English option>          (recommended)
     [2] <plain-English option>
-    [3] Abandon voyage (state preserved — run /voyage <N> to resume)
+    [3] Abort mission (state preserved — run /mission <N> to resume)
 
-  Tell me a number, or describe what ye want.
+  Enter a number, or describe what you want.
 ```
 
 Rules:
-- The REASON line is plain English. No pirate prose in the options.
-- Always include an "Abandon voyage" option as the last numbered option.
-- Pirate flavour is confined to the banner (`⚓ HEAVY SEAS`) and the closing
-  prompt verb only.
+- The REASON line is plain English. No space jargon in the options.
+- Always include an "Abort mission" option as the last numbered option.
+- Space flavour is confined to the banner (`🚨 ABORT SEQUENCE`) only.
 - Number options so the user can reply with "1" without paraphrasing.
 - Do NOT proceed after printing this. Exit the skill and wait for the next
-  `/voyage <N>` invocation.
+  `/mission <N>` invocation.
 - When the user responds, resume by updating state appropriately
   (e.g., `phase_status=pending` to retry, or `task.status=skipped` to skip a task) before re-running.

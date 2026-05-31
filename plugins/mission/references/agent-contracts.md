@@ -1,9 +1,9 @@
 # Agent Return Contracts
 
-Every voyage sub-agent returns exactly ONE fenced block. No prose outside
-the delimiters. Captain parses ONLY the content between the block markers.
+Every mission sub-agent returns exactly ONE fenced block. No prose outside
+the delimiters. Mission Control parses ONLY the content between the block markers.
 
-## Navigator — ### PLAN
+## Flight Director — ### PLAN
 
 ```
 ### PLAN
@@ -12,32 +12,32 @@ revision: <integer, starts at 1>
 summary: <one sentence>
 next_alpha_index: <integer>
 tasks:
-  - name: Anne
+  - name: Apollo
     title: <one-line description>
     files: [path/to/file.ts, path/to/other.ts]
-    acceptance: <how the Crewmate knows it is done>
+    acceptance: <how the Astronaut knows it is done>
     depends_on: []
-  - name: Blackbeard
+  - name: Borman
     title: ...
     files: [...]
     acceptance: ...
-    depends_on: [Anne]
+    depends_on: [Apollo]
 open_questions: []
 constraints: []
 ### END PLAN
 ```
 
 Rules:
-- Task names come from the pirate roster in `references/pirate-lexicon.md`,
+- Task names come from the crew roster in `references/crew-roster.md`,
   assigned in alphabetical order starting from the current `plan.next_alpha_index`.
 - `depends_on` contains task NAMES (not ids). Declare only genuine dependencies.
 - Tasks with `depends_on: []` may run concurrently with other zero-dep tasks.
 
-## Crewmate — ### CREW_REPORT
+## Astronaut — ### CREW_REPORT
 
 ```
 ### CREW_REPORT
-task: <pirate name>
+task: <crew member name>
 status: completed | plan_problem
 files_changed:
   - path: src/retry.ts
@@ -48,11 +48,11 @@ plan_problem: <only if status=plan_problem>
 ### END CREW_REPORT
 ```
 
-## Quartermaster — ### VERDICT
+## Flight Controller — ### VERDICT
 
 ```
 ### VERDICT
-task: <pirate name>
+task: <crew member name>
 verdict: PASS | FAIL
 checks:
   - name: tests
@@ -80,7 +80,7 @@ notes: <optional>
 ### END VERDICT
 ```
 
-## First Mate — ### FINDINGS
+## Systems Inspector — ### FINDINGS
 
 ```
 ### FINDINGS
@@ -97,7 +97,7 @@ findings:
 
 If no findings: return the block with `findings: []`.
 
-## Bosun — ### TRIAGE
+## CAPCOM — ### TRIAGE
 
 ```
 ### TRIAGE

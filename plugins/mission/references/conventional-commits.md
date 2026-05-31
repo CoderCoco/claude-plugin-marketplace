@@ -1,6 +1,6 @@
-# Conventional Commits — voyage
+# Conventional Commits — mission
 
-All commits made during a voyage follow this format.
+All commits made during a mission follow this format.
 
 ## Format
 
@@ -31,18 +31,18 @@ Use the primary directory or feature area: `src`, `tests`, `api`, `db`, etc.
 
 ## Name field
 
-Always include the pirate task name before the summary dash:
+Always include the crew member's name before the summary dash:
 
 ```
-feat(src): Anne — add exponential backoff helper
-fix(tests): Avery — clear ANSI format from file transport
-fix(src): Plunkett — return 404 instead of 500 on missing webhook
+feat(src): Apollo — add exponential backoff helper
+fix(tests): Aldrin — clear ANSI format from file transport
+fix(src): Quirrenbach — return 404 instead of 500 on missing webhook
 ```
 
-Parley (PR comment) fixes add a Co-Authored-By line:
+Comms (PR comment) fixes add a Co-Authored-By line:
 
 ```
-fix(src): Plunkett — return 404 on missing webhook
+fix(src): Quirrenbach — return 404 on missing webhook
 
 Refs #42
 Co-Authored-By: alice (via PR comment)
@@ -56,5 +56,5 @@ Never commit `.claude/` state files, `.env`, or credential files.
 
 ## Closing keywords
 
-Only `open-pr` / `make-port` skills use `Closes #N`. All mid-voyage commits
+Only `docking` skill uses `Closes #N`. All mid-mission commits
 use `Refs #N` only.
