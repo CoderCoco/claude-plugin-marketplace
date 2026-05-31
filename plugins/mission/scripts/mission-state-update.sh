@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# voyage-state-update.sh <issue_number> <key> <value>
+# mission-state-update.sh <issue_number> <key> <value>
 #
 # Keys:
 #   phase               <phase-name>
@@ -17,14 +17,14 @@
 #   plan_task_commit    <name>:<sha>
 #   plan_task_attempts_inc <name>
 #   history_append      <json object string>
-#   inspection_attempts_inc  (value ignored)
+#   systems_check_attempts_inc  (value ignored)
 set -euo pipefail
 
 ISSUE_NUMBER="$1"
 KEY="$2"
 VALUE="${3:-}"
 
-STATE_FILE="${CLAUDE_PLUGIN_DATA}/voyage-state/issue-${ISSUE_NUMBER}.json"
+STATE_FILE="${CLAUDE_PLUGIN_DATA}/mission-state/issue-${ISSUE_NUMBER}.json"
 TMP="${STATE_FILE}.tmp"
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -86,9 +86,9 @@ case "$KEY" in
   history_append)
     jq --argjson v "$VALUE" --arg now "$NOW" \
       '.history += [$v] | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;
-  inspection_attempts_inc)
+  systems_check_attempts_inc)
     jq --arg now "$NOW" \
-      '.inspection.attempts += 1 | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;
+      '.systems_check.attempts += 1 | .updated_at = $now' "$STATE_FILE" > "$TMP" ;;
   *)
     echo "ERROR: Unknown key: $KEY" >&2; exit 1 ;;
 esac
