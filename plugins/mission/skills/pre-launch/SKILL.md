@@ -25,7 +25,8 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
 ```bash
 ISSUE_JSON=$(gh issue view "$ISSUE_NUM" --repo "$REPO" \
-  --json number,title,body,labels,milestone)
+  --json number,title,body,labels,milestone \
+  | tr -d '\000-\010\013\014\016-\037')
 ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
 ```
 
