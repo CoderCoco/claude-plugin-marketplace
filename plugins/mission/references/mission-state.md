@@ -1,9 +1,9 @@
-# Voyage State File
+# Mission State File
 
 ## Location
 
 ```
-$CLAUDE_PLUGIN_DATA/voyage-state/issue-<N>.json
+$CLAUDE_PLUGIN_DATA/mission-state/issue-<N>.json
 ```
 
 One file per issue. Never committed; never in the working tree.
@@ -12,7 +12,7 @@ One file per issue. Never committed; never in the working tree.
 
 ```jsonc
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "issue": {
     "number": 42,
     "title": "Add retry to webhook delivery",
@@ -25,7 +25,7 @@ One file per issue. Never committed; never in the working tree.
     "base": "main",
     "base_sha_at_start": "abc123..."
   },
-  "phase": "set-sail",
+  "phase": "liftoff",
   "phase_status": "in_progress",
   "halted_reason": null,
 
@@ -34,7 +34,7 @@ One file per issue. Never committed; never in the working tree.
     "next_alpha_index": 5,
     "tasks": [
       {
-        "name": "Anne",
+        "name": "Apollo",
         "title": "Add exponential backoff helper",
         "files": ["src/retry.ts"],
         "depends_on": [],
@@ -48,7 +48,7 @@ One file per issue. Never committed; never in the working tree.
     ]
   },
 
-  "inspection": {
+  "systems_check": {
     "attempts": 0,
     "attempt_cap": 3,
     "findings": [],
@@ -66,10 +66,10 @@ One file per issue. Never committed; never in the working tree.
   },
 
   "history": [
-    {"at": "2026-05-23T20:00:00Z", "phase": "chart-course", "event": "initialized"},
-    {"at": "2026-05-23T20:02:11Z", "phase": "chart-course", "event": "completed", "tasks": 5},
-    {"at": "2026-05-23T20:02:12Z", "phase": "set-sail", "event": "started"},
-    {"at": "2026-05-23T20:08:33Z", "phase": "set-sail", "event": "task_passed", "task": "Anne"}
+    {"at": "2026-05-23T20:00:00Z", "phase": "pre-launch", "event": "initialized"},
+    {"at": "2026-05-23T20:02:11Z", "phase": "pre-launch", "event": "completed", "tasks": 5},
+    {"at": "2026-05-23T20:02:12Z", "phase": "liftoff", "event": "started"},
+    {"at": "2026-05-23T20:08:33Z", "phase": "liftoff", "event": "task_passed", "task": "Apollo"}
   ],
 
   "created_at": "2026-05-23T20:00:00Z",
@@ -79,7 +79,7 @@ One file per issue. Never committed; never in the working tree.
 
 ## Phase enum
 
-`chart-course` → `set-sail` → `inspection` → `make-port` → `parley` → `done`
+`pre-launch` → `liftoff` → `systems-check` → `docking` → `comms` → `done`
 
 ## Phase status enum
 
@@ -91,10 +91,10 @@ One file per issue. Never committed; never in the working tree.
 
 ## Task origin enum
 
-`plan` (from Navigator) | `inspection` (repair task) | `parley` (comment fix)
+`plan` (from Flight Director) | `systems-check` (repair task) | `comms` (comment fix)
 
 ## Atomic writes
 
-All writes go through `scripts/voyage-state-update.sh`. Never write the
+All writes go through `scripts/mission-state-update.sh`. Never write the
 state file directly — the script handles the `.tmp` → `mv` atomic swap and
 keeps `updated_at` and `history` consistent.
