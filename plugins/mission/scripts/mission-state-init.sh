@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# voyage-state-init.sh <issue_num> <title> <repo> <branch> <worktree> <base> <base_sha>
-# Creates $CLAUDE_PLUGIN_DATA/voyage-state/issue-<N>.json
+# mission-state-init.sh <issue_num> <title> <repo> <branch> <worktree> <base> <base_sha>
+# Creates $CLAUDE_PLUGIN_DATA/mission-state/issue-<N>.json
 # Idempotent: exits 0 immediately if file already exists.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ WORKTREE_PATH="$5"
 BASE_BRANCH="$6"
 BASE_SHA="$7"
 
-STATE_DIR="${CLAUDE_PLUGIN_DATA}/voyage-state"
+STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-state"
 STATE_FILE="${STATE_DIR}/issue-${ISSUE_NUMBER}.json"
 
 [ -f "$STATE_FILE" ] && exit 0
@@ -31,7 +31,7 @@ jq -n \
   --arg sha "$BASE_SHA" \
   --arg now "$NOW" \
 '{
-  schema_version: 1,
+  schema_version: 2,
   issue: {
     number: $num,
     title: $title,
@@ -44,7 +44,7 @@ jq -n \
     base: $base,
     base_sha_at_start: $sha
   },
-  phase: "chart-course",
+  phase: "pre-launch",
   phase_status: "pending",
   halted_reason: null,
   plan: {
@@ -52,7 +52,7 @@ jq -n \
     next_alpha_index: 0,
     tasks: []
   },
-  inspection: {
+  systems_check: {
     attempts: 0,
     attempt_cap: 3,
     findings: [],
@@ -67,7 +67,7 @@ jq -n \
     copilot_was_requested: false,
     watcher_scheduled: false
   },
-  history: [{at: $now, phase: "chart-course", event: "initialized"}],
+  history: [{at: $now, phase: "pre-launch", event: "initialized"}],
   created_at: $now,
   updated_at: $now
 }' > "$TMP"
