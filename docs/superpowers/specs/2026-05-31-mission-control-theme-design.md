@@ -71,7 +71,7 @@ commit messages and shell variables.
 | shoal / reef (a code-review finding) | anomaly |
 | belay (stop) | abort |
 | aye / nay | go / no-go |
-| Captain (main session) | Flight Director |
+| Captain (main session) | Mission Control |
 | crew (sub-agents collectively) | crew |
 | weigh anchor (resume) | resume mission |
 | "Smooth seas — no new comments" | "All systems nominal — no new comments" |
