@@ -55,6 +55,8 @@ git show-ref --verify --quiet "refs/heads/$BRANCH" || \
   git worktree add "$WORKTREE_PATH" "$BRANCH"
 ```
 
+Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the new worktree.
+
 ## Step 4: Initialise state file
 
 ```bash
@@ -166,8 +168,7 @@ the user's feedback as revision instructions, and repeat from Step 6.
 If the user says `y` (or `--auto` was passed), print:
 
 ```
-All systems go — mission is ready for liftoff on issue #N. Run /liftoff N (or /mission N) to build.
+All systems go — mission is ready for liftoff on issue #N.
 ```
 
-The phase is already marked `completed` in state. `/mission N` will advance
-to `liftoff` on the next invocation.
+Then immediately invoke the `mission:liftoff` skill with `$ISSUE_NUM` as the argument to begin liftoff.

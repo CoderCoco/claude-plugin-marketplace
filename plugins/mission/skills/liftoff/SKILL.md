@@ -24,10 +24,12 @@ PHASE_STATUS=$(echo "$STATE" | jq -r '.phase_status')
   exit 1
 }
 
-cd "$(echo "$STATE" | jq -r '.branch.worktree_path')"
+WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 REPO=$(echo "$STATE" | jq -r '.issue.repo')
 ```
+
+Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the mission worktree before doing any work.
 
 ## Step 2: Mark phase in_progress
 
@@ -82,7 +84,6 @@ For each VERDICT:
 - `PASS`:
   1. Stage and commit (sequential, one commit per task):
      ```bash
-     cd "$WORKTREE_PATH"
      git add <files from CREW_REPORT>
      git commit -m "feat(<scope>): <name> — <title>
 
@@ -129,8 +130,10 @@ For each VERDICT:
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"liftoff\",\"event\":\"completed\"}"
-echo "All crew reported in — liftoff complete. Run /systems-check $ISSUE_NUM (or /mission $ISSUE_NUM) to review."
+echo "All crew reported in — liftoff complete."
 ```
+
+Immediately invoke the `mission:systems-check` skill with `$ISSUE_NUM` as the argument to advance to systems-check.
 
 ## Parallelism cap
 

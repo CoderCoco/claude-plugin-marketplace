@@ -14,13 +14,15 @@ repair tasks executed by Astronauts. Loop until clean or cap reached.
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 [ "$(echo "$STATE" | jq -r '.phase')" = "systems-check" ] || { echo "Not in systems-check phase"; exit 1; }
-cd "$(echo "$STATE" | jq -r '.branch.worktree_path')"
+WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 BASE_SHA=$(echo "$STATE" | jq -r '.branch.base_sha_at_start')
 ATTEMPT_CAP=$(echo "$STATE" | jq -r '.systems_check.attempt_cap')
 DECLINED=$(echo "$STATE" | jq '.systems_check.declined_findings')
 RUBRIC=$(cat "${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md")
 ```
+
+Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the mission worktree before doing any work.
 
 ## Step 2: Mark phase in_progress
 
@@ -71,9 +73,10 @@ If `findings` contains no item with severity `blocker`, `major`, or `minor`:
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"...\",\"phase\":\"systems-check\",\"event\":\"completed\"}"
-echo "Systems check clear — no significant findings. Run /docking $ISSUE_NUM (or /mission $ISSUE_NUM)."
-exit 0
+echo "Systems check clear — no significant findings."
 ```
+
+Immediately invoke the `mission:docking` skill with `$ISSUE_NUM` as the argument to advance to docking.
 
 Nits are listed in the mission log but do not block progress.
 

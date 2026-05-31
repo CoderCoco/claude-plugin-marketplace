@@ -14,12 +14,16 @@ schedule a comms watcher.
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 [ "$(echo "$STATE" | jq -r '.phase')" = "docking" ] || { echo "Not in docking phase"; exit 1; }
-cd "$(echo "$STATE" | jq -r '.branch.worktree_path')"
+WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 BRANCH=$(echo "$STATE" | jq -r '.branch.name')
 REPO=$(echo "$STATE" | jq -r '.issue.repo')
 BASE=$(echo "$STATE" | jq -r '.branch.base')
+```
 
+Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the mission worktree.
+
+```bash
 # Verify clean working tree
 DIRTY=$(git status --porcelain | grep -v '^??' || true)
 if [ -n "$DIRTY" ]; then
