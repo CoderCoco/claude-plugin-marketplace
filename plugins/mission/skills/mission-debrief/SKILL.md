@@ -1,9 +1,9 @@
 ---
-name: mark-the-charts
-description: Use when the user wants to add new code-review findings to the First Mate's rubric, has review feedback to record, pastes a postmortem of issues a reviewer caught, or mentions "mark the charts", "add to rubric", "the First Mate missed these", "update the review checklist". Takes free-form findings input and folds them into references/review-rubric.md with classification, dedup, and a confirmation gate.
+name: mission-debrief
+description: Use when the user wants to add new code-review findings to the Systems Inspector's rubric, has review feedback to record, pastes a postmortem of issues a reviewer caught, or mentions "mission debrief", "add to rubric", "the Systems Inspector missed these", "update the review checklist". Takes free-form findings input and folds them into references/review-rubric.md with classification, dedup, and a confirmation gate.
 ---
 
-# /mark-the-charts — Update the Review Rubric
+# /mission-debrief — Update the Review Rubric
 
 Take external findings (review comments, postmortem notes, pasted writeups)
 and fold them into `references/review-rubric.md`.
@@ -12,10 +12,10 @@ and fold them into `references/review-rubric.md`.
 
 Input can come from any of:
 1. **Arguments:** pasted text provided directly after the command.
-2. **File:** `/mark-the-charts < findings.md` — read from file.
-3. **PR:** `/mark-the-charts --pr <N>` — fetch review comments via
+2. **File:** `/mission-debrief < findings.md` — read from file.
+3. **PR:** `/mission-debrief --pr <N>` — fetch review comments via
    `gh pr view <N> --json reviews,comments`.
-4. **Interactive:** no args — ask "Paste yer findings below, then send."
+4. **Interactive:** no args — ask "Paste your findings below, then send."
 
 ## Step 2: Read current rubric
 
@@ -47,7 +47,7 @@ For each finding in the input:
 ## Step 4: Present summary table
 
 ```
-Here be the findings I'll add to the charts:
+Findings ready for debrief:
 
   # | Finding (summary)                          | Category         | Action
   ──────────────────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ Show a diff of the rubric changes and ask: "Does this look right? [Y/n]"
 On Y:
 ```bash
 git add "$RUBRIC_PATH"
-git commit -m "docs(voyage): update review rubric with N pitfalls via /mark-the-charts"
+git commit -m "docs(mission): update review rubric with N pitfalls via /mission-debrief"
 ```
 
-Print: "The charts have been updated, Captain. The First Mate will check for these on the next voyage."
+Print: "Mission debrief complete. The Systems Inspector will check for these on the next mission."
