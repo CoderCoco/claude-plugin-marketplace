@@ -1,12 +1,12 @@
 ---
-name: chart-course
-description: Use when the user wants to start planning an issue in the voyage workflow, or when /voyage dispatches the chart-course phase. Trigger on "chart-course <N>", "/chart-course", or when voyage state shows phase=chart-course and phase_status=pending. Reads the GitHub issue, creates a worktree, dispatches Navigator, writes the plan to state, and asks for confirmation before set-sail.
+name: pre-launch
+description: Use when the user wants to start planning an issue in the mission workflow, or when /mission dispatches the pre-launch phase. Trigger on "pre-launch <N>", "/pre-launch", or when mission state shows phase=pre-launch and phase_status=pending. Reads the GitHub issue, creates a worktree, dispatches Flight Director, writes the flight plan to state, and asks for confirmation before liftoff.
 ---
 
-# Phase 1 — Chart Course
+# Phase 1 — Pre-Launch
 
-Read issue #N, create a worktree, dispatch the Navigator, write the plan to
-the voyage state file, and confirm with the user before setting sail.
+Read issue #N, create a worktree, dispatch the Flight Director, write the
+flight plan to the mission state file, and confirm with the user before liftoff.
 
 ## Step 1: Resolve issue number and repo
 
@@ -58,7 +58,7 @@ git show-ref --verify --quiet "refs/heads/$BRANCH" || \
 
 ```bash
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-bash "$SCRIPT_DIR/voyage-state-init.sh" \
+bash "$SCRIPT_DIR/mission-state-init.sh" \
   "$ISSUE_NUM" "$ISSUE_TITLE" "$REPO" \
   "$BRANCH" "$WORKTREE_PATH" "$BASE" "$BASE_SHA"
 ```
@@ -67,11 +67,11 @@ If init returned without error (idempotent), read current state to check
 if this phase was already completed:
 
 ```bash
-STATE=$(bash "$SCRIPT_DIR/voyage-state-read.sh" "$ISSUE_NUM")
+STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 PHASE=$(echo "$STATE" | jq -r '.phase')
 PHASE_STATUS=$(echo "$STATE" | jq -r '.phase_status')
-if [ "$PHASE" != "chart-course" ] || [ "$PHASE_STATUS" = "completed" ]; then
-  echo "Chart course already complete. Run /set-sail $ISSUE_NUM to continue."
+if [ "$PHASE" != "pre-launch" ] || [ "$PHASE_STATUS" = "completed" ]; then
+  echo "Pre-launch already complete. Run /liftoff $ISSUE_NUM to continue."
   exit 0
 fi
 ```
@@ -82,21 +82,17 @@ fi
 PROJECT_ID=$(gh issue view "$ISSUE_NUM" --repo "$REPO" \
   --json projectItems --jq '.projectItems[0].id // empty')
 if [ -n "$PROJECT_ID" ]; then
-  # Find the "In Progress" field option id and update
   gh issue edit "$ISSUE_NUM" --repo "$REPO" 2>/dev/null || true
-  # gh project item-edit --id "$PROJECT_ID" --field-id <STATUS_FIELD> \
-  #   --project-id <PROJECT_NUM> --single-select-option-id <IN_PROGRESS_ID>
-  # Discovery pattern: match issue-flow's existing move-to-in-progress logic.
 fi
 ```
 
-## Step 6: Dispatch Navigator
+## Step 6: Dispatch Flight Director
 
-Read current `plan.next_alpha_index` from state (0 for a fresh voyage).
-Dispatch the Navigator sub-agent:
+Read current `plan.next_alpha_index` from state (0 for a fresh mission).
+Dispatch the Flight Director sub-agent:
 
 ```
-Agent(navigator, context={
+Agent(flight-director, context={
   issue_number: ISSUE_NUM,
   issue_body: ISSUE_JSON.body,
   issue_title: ISSUE_TITLE,
@@ -104,18 +100,18 @@ Agent(navigator, context={
   worktree_path: WORKTREE_PATH,
   next_alpha_index: 0,
   instructions: "Load references/agent-contracts.md for the PLAN block format.
-                 Load references/pirate-lexicon.md for the task name roster.
+                 Load references/crew-roster.md for the task name roster.
                  Start naming tasks from index 0."
 })
 ```
 
-Parse the `### PLAN` / `### END PLAN` block from the Navigator's response.
-If the Navigator returns an `open_questions` list, surface them to the user
+Parse the `### PLAN` / `### END PLAN` block from the Flight Director's response.
+If the Flight Director returns an `open_questions` list, surface them to the user
 before proceeding.
 
-## Step 7: Write plan to state
+## Step 7: Write flight plan to state
 
-Convert the Navigator's tasks into the state-file task schema and write:
+Convert the Flight Director's tasks into the state-file task schema and write:
 
 ```bash
 # Build tasks JSON array from PLAN block
@@ -139,38 +135,38 @@ for t in plan['tasks']:
 print(json.dumps(tasks))
 ")
 
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" plan_tasks_replace "$TASKS_JSON"
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" plan_next_alpha \
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" plan_tasks_replace "$TASKS_JSON"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" plan_next_alpha \
   "$(echo "$PLAN_BLOCK" | grep '^next_alpha_index:' | awk '{print $2}')"
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" history_append \
-  "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"chart-course\",\"event\":\"completed\",\"tasks\":$(echo "$TASKS_JSON" | jq length)}"
-bash "$SCRIPT_DIR/voyage-state-update.sh" "$ISSUE_NUM" phase_status "completed"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
+  "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"pre-launch\",\"event\":\"completed\",\"tasks\":$(echo "$TASKS_JSON" | jq length)}"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
 ```
 
-## Step 8: Present plan and confirm
+## Step 8: Present flight plan and confirm
 
-Print the plan in a readable table:
+Print the flight plan in a readable table:
 
 ```
-Ahoy! The Navigator has charted the course for issue #N:
+Flight plan ready for issue #N:
 
   Name          Title                                    Files
   ──────────────────────────────────────────────────────────────
-  Anne          Add exponential backoff helper           src/retry.ts
-  Blackbeard    Wire retry into webhook sender           src/webhook.ts  [->Anne]
-  Calico        Add tests for retry logic                src/retry.test.ts
+  Apollo        Add exponential backoff helper           src/retry.ts
+  Borman        Wire retry into webhook sender           src/webhook.ts  [->Apollo]
+  Cassini       Add tests for retry logic                src/retry.test.ts
 
-Set sail? [Y/n]  (or pass --auto to skip this confirmation)
+Ready for liftoff? [Y/n]  (or pass --auto to skip this confirmation)
 ```
 
-If the user says `n` or provides feedback, re-dispatch the Navigator with
+If the user says `n` or provides feedback, re-dispatch the Flight Director with
 the user's feedback as revision instructions, and repeat from Step 6.
 
 If the user says `y` (or `--auto` was passed), print:
 
 ```
-All hands on deck — setting sail for issue #N. Run /set-sail N (or /voyage N) to build.
+All systems go — mission is ready for liftoff on issue #N. Run /liftoff N (or /mission N) to build.
 ```
 
-The phase is already marked `completed` in state. `/voyage N` will advance
-to `set-sail` on the next invocation.
+The phase is already marked `completed` in state. `/mission N` will advance
+to `liftoff` on the next invocation.
