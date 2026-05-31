@@ -6,9 +6,9 @@ only by direct edit.
 
 ## What this covers
 
-Semantic and quality concerns the Quartermaster's mechanical checks
+Semantic and quality concerns the Flight Controller's mechanical checks
 (tests/lint/types/build) CANNOT catch. Do not re-flag things the
-Quartermaster already checks.
+Flight Controller already checks.
 
 ---
 
