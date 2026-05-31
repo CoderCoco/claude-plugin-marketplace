@@ -1,0 +1,10 @@
+{
+  "name": "mission",
+  "description": "End-to-end GitHub issue orchestrator — plan, build, review, open PR, handle comments. Resumable state machine. Space / mission control themed.",
+  "version": "0.2.0",
+  "author": {
+    "name": "CoderCoco"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/CoderCoco/claude-plugin-marketplace"
+}
