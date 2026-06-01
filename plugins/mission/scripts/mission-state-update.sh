@@ -20,6 +20,7 @@
 #   history_append      <json object string>
 #   systems_check_attempts_inc  (value ignored)
 set -euo pipefail
+CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/mission-codercoco-custom-plugin-marketplace}"
 
 ISSUE_NUMBER="$1"
 KEY="$2"

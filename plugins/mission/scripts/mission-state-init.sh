@@ -3,6 +3,7 @@
 # Creates $CLAUDE_PLUGIN_DATA/mission-state/issue-<N>.json
 # Idempotent: exits 0 immediately if file already exists.
 set -euo pipefail
+CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/mission-codercoco-custom-plugin-marketplace}"
 
 ISSUE_NUMBER="$1"
 ISSUE_TITLE="$2"

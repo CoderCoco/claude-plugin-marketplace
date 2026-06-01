@@ -97,12 +97,17 @@ If no findings: return the block with `findings: []`.
 comments:
   - id: <comment id as integer>
     author: <github username>
-    category: actionable | question | approval | nit | ambiguous
+    category: actionable | question | approval | nit | ambiguous | duplicate
     file: src/webhook.ts        # only for actionable/nit
     line: 88                    # only for actionable/nit
     fix_hint: return 404 not 500 for missing webhook id  # only for actionable/nit
     reply_draft: |              # only for question
       The retry uses exponential backoff with jitter...
+    duplicate_of: <primary comment id>  # only for category=duplicate
 copilot_present: true | false
 ### END TRIAGE
 ```
+
+`duplicate`: identical body on the same file as a primary comment. One fix is
+applied to the primary; duplicates get `category: duplicate` with `duplicate_of`
+pointing to the primary id — no separate fix, no separate reply.

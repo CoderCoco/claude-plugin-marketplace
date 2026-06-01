@@ -2,6 +2,7 @@
 # mission-print-log.sh <issue_number>
 # Prints ASCII summary and markdown chronicle from state history.
 set -euo pipefail
+CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/mission-codercoco-custom-plugin-marketplace}"
 
 ISSUE_NUMBER="$1"
 STATE_FILE="${CLAUDE_PLUGIN_DATA}/mission-state/issue-${ISSUE_NUMBER}.json"

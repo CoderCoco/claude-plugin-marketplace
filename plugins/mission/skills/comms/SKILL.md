@@ -6,51 +6,129 @@ description: Use when the mission is in comms phase, or when /mission dispatches
 # Phase 5 — Comms
 
 Handle incoming PR comments. Fix actionable items, answer questions (with
-approval), and re-request Copilot review after any push.
+approval), resolve threads, and re-request Copilot review after any push.
 
 ## Step 1: Load state and validate
 
 ```bash
+export CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/mission-codercoco-custom-plugin-marketplace}"
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 [ "$(echo "$STATE" | jq -r '.phase')" = "comms" ] || { echo "Not in comms phase"; exit 1; }
 WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 REPO=$(echo "$STATE" | jq -r '.issue.repo')
+BRANCH=$(echo "$STATE" | jq -r '.branch.name')
 PR_NUM=$(echo "$STATE" | jq -r '.pr.number')
 LAST_SEEN_AT=$(echo "$STATE" | jq -r '.pr.last_seen_at // "1970-01-01T00:00:00Z"')
+OWNER=$(echo "$REPO" | cut -d/ -f1)
+REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
 ```
 
-Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the mission worktree.
+If `$PWD != $WORKTREE_PATH`, call `EnterWorktree` with `path: $WORKTREE_PATH`.
 
 ## Step 2: Fetch new comments
 
+Use three separate REST calls — `gh pr view --json reviews` does not reliably
+return inline comments, and Copilot review bodies have `submitted_at` not `created_at`.
+
 ```bash
-COMMENTS=$(gh pr view "$PR_NUM" --repo "$REPO" \
-  --json comments,reviews --jq "
-    [
-      (.comments[] | {id: (.databaseId | tostring), author: .author.login, body, url, createdAt}),
-      (.reviews[]? | select(.body != \"\" and .body != null)
-        | {id: .id, author: .author.login, body, url, createdAt, isReview: true}),
-      (.reviews[]? | .comments[]?
-        | {id: (.databaseId | tostring), author: .author.login, body, url, createdAt})
-    ] |
-    map(select(.createdAt > \"$LAST_SEEN_AT\")) |
-    sort_by(.createdAt)")
+# PR-level comments (plain comments on the PR thread)
+PR_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --paginate \
+  | jq '[.[] | {
+      id,
+      node_id,
+      author: .user.login,
+      body,
+      url: .html_url,
+      timestamp: .created_at,
+      type: "pr_comment",
+      in_reply_to_id: null,
+      file: null,
+      line: null
+    }]')
+
+# Review summary bodies — Copilot posts here; use submitted_at as the timestamp
+REVIEW_BODIES=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --paginate \
+  | jq '[.[] | select(.body != "" and .body != null) | {
+      id: (.id | tostring),
+      node_id,
+      author: .user.login,
+      body,
+      url: .html_url,
+      timestamp: (.submitted_at // .created_at),
+      type: "review_body",
+      in_reply_to_id: null,
+      file: null,
+      line: null
+    }]')
+
+# Inline review comments — the REST endpoint that actually works
+INLINE_COMMENTS=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" --paginate \
+  | jq '[.[] | {
+      id,
+      node_id,
+      author: .user.login,
+      body,
+      url: .html_url,
+      timestamp: .created_at,
+      type: "inline_comment",
+      in_reply_to_id: .in_reply_to_id,
+      file: .path,
+      line: (.line // .original_line)
+    }]')
+
+# Merge and filter to only unseen comments
+COMMENTS=$(jq -n \
+  --argjson pr "$PR_COMMENTS" \
+  --argjson rb "$REVIEW_BODIES" \
+  --argjson ic "$INLINE_COMMENTS" \
+  --arg last "$LAST_SEEN_AT" \
+  '($pr + $rb + $ic) | map(select(.timestamp > $last)) | sort_by(.timestamp)')
+
 NEW_COUNT=$(echo "$COMMENTS" | jq length)
+```
+
+### Step 2b: Fetch review thread map (for resolution)
+
+```bash
+THREAD_MAP=$(gh api graphql \
+  -f query='query($owner:String!,$name:String!,$number:Int!){
+    repository(owner:$owner,name:$name){
+      pullRequest(number:$number){
+        reviewThreads(first:100){
+          nodes{
+            id
+            isResolved
+            comments(first:1){nodes{databaseId}}
+          }
+        }
+      }
+    }
+  }' \
+  -f owner="$OWNER" -f name="$REPO_NAME" -F number="$PR_NUM" \
+  | jq '.data.repository.pullRequest.reviewThreads.nodes |
+        map({
+          key: (.comments.nodes[0].databaseId | tostring),
+          value: {thread_id: .id, is_resolved: .isResolved}
+        }) | from_entries')
 ```
 
 If `NEW_COUNT == 0`:
 ```
 All systems nominal — no new comments since last comms check.
 ```
-Exit 0.
+Then check the done condition (Step 8) and exit.
 
 ## Step 3: Dispatch CAPCOM
+
+Pass the full normalized comment list including `in_reply_to_id`, `file`, `line`,
+and `type` so CAPCOM can detect duplicates and already-replied threads.
 
 ```
 Agent(capcom, context={
   comments: COMMENTS,
+  inline_comments_raw: INLINE_COMMENTS,
   pr_number: PR_NUM,
   repo: REPO
 })
@@ -68,7 +146,7 @@ if [ "$AMBIGUOUS_COUNT" -gt 0 ]; then
   echo "🚨 ABORT SEQUENCE — comms halted"
   echo ""
   echo "  Reason: CAPCOM could not classify these comments:"
-  echo "$TRIAGE" | jq -r '.comments[] | select(.category == "ambiguous") | "    - \(.author): \(.reply_draft // "(no draft)")"'
+  echo "$TRIAGE" | jq -r '.comments[] | select(.category == "ambiguous") | "    - \(.author): \(.body[:80])"'
   echo ""
   echo "  Your options:"
   echo "    [1] Tell me how to handle each ambiguous comment"
@@ -97,6 +175,17 @@ Refs #$ISSUE_NUM
 Co-Authored-By: <comment.author> (via PR comment)
 ```
 
+After pushing, resolve the thread for each inline comment that was actioned:
+```bash
+# For each actioned inline comment id:
+THREAD_ID=$(echo "$THREAD_MAP" | jq -r --argjson cid "$COMMENT_ID" '.[$cid | tostring].thread_id // empty')
+if [ -n "$THREAD_ID" ]; then
+  gh api graphql \
+    -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \
+    -f tid="$THREAD_ID" > /dev/null
+fi
+```
+
 ## Step 5: Answer questions (with approval)
 
 For each `category: "question"` item with a `reply_draft`:
@@ -109,8 +198,22 @@ Draft reply to <author>'s question:
 Post this reply? [Y/edit/skip]
 ```
 
-Wait for approval. On Y: `gh pr comment "$PR_NUM" --repo "$REPO" --body "<draft>" --reply-to <id>`
-On edit: let user revise text, then post. On skip: move to next.
+Wait for approval. On Y:
+```bash
+gh pr comment "$PR_NUM" --repo "$REPO" --body "<draft>"
+```
+
+For inline question comments, also resolve the thread immediately after posting:
+```bash
+THREAD_ID=$(echo "$THREAD_MAP" | jq -r --argjson cid "$COMMENT_ID" '.[$cid | tostring].thread_id // empty')
+if [ -n "$THREAD_ID" ]; then
+  gh api graphql \
+    -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \
+    -f tid="$THREAD_ID" > /dev/null
+fi
+```
+
+On edit: let user revise text, then post and resolve. On skip: move to next.
 
 ## Step 6: Re-request Copilot review
 
@@ -121,18 +224,51 @@ gh pr edit "$PR_NUM" --repo "$REPO" --add-reviewer Copilot 2>/dev/null || \
   echo "Note: Copilot re-request failed — re-request manually if needed."
 ```
 
-## Step 7: Update last_comment_id_seen
+## Step 7: Update last seen timestamp
 
 ```bash
-MAX_AT=$(echo "$COMMENTS" | jq -r '[.[].createdAt] | max')
+MAX_AT=$(echo "$COMMENTS" | jq -r '[.[].timestamp] | max')
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" pr_last_seen_at "$MAX_AT"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"comms\",\"event\":\"round_complete\",\"fixed\":$(echo "$TRIAGE" | jq '[.comments[] | select(.category == "actionable")] | length')}"
 ```
 
-Phase stays `comms`. Re-run `/comms <N>` or `/mission <N>` for the next batch.
+## Step 8: Done check
 
-## Step 8: Optional loop-back to systems-check
+```bash
+# Re-fetch thread map to reflect resolutions made this round
+UPDATED_THREAD_MAP=$(gh api graphql \
+  -f query='query($owner:String!,$name:String!,$number:Int!){
+    repository(owner:$owner,name:$name){
+      pullRequest(number:$number){
+        reviewThreads(first:100){nodes{isResolved}}
+      }
+    }
+  }' \
+  -f owner="$OWNER" -f name="$REPO_NAME" -F number="$PR_NUM" \
+  | jq '.data.repository.pullRequest.reviewThreads.nodes')
+
+ALL_RESOLVED=$(echo "$UPDATED_THREAD_MAP" | jq 'length == 0 or all(.isResolved == true)')
+
+CI_PASSING=$(gh pr checks "$PR_NUM" --repo "$REPO" --json state \
+  | jq 'length == 0 or all(.state == "SUCCESS")')
+```
+
+If `ALL_RESOLVED == true` AND `CI_PASSING == true`:
+```
+✅ All threads resolved and CI is green.
+   Run /mission $ISSUE_NUM --finish to close the mission.
+```
+
+Otherwise, print a status summary:
+```
+Comms round complete.
+  Threads: X resolved, Y open
+  CI: pass | fail | pending
+  Re-run /comms $ISSUE_NUM when new comments arrive.
+```
+
+## Step 9: Optional loop-back to systems-check
 
 If >= 3 repair tasks were fixed and committed this round:
 ```

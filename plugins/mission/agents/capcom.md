@@ -25,6 +25,20 @@ For every comment in the list Mission Control gives you, assign exactly ONE cate
 
 - **ambiguous** — Could be a request OR a question — you genuinely cannot tell. Flag it and halt. Do NOT guess intent.
 
+## Pre-processing: filter already-handled threads
+
+Before categorising, remove comments that do NOT need action:
+
+1. **Already replied** — An inline comment (`type: "inline_comment"`) where
+   `in_reply_to_id` is non-null AND there is already a reply in `inline_comments_raw`
+   from `CoderCoco` (or the repo owner) pointing to the same root comment. Skip it.
+
+2. **Duplicate body** — Multiple inline comments with identical `body` on the
+   same `file`. Treat the group as ONE item: categorise and emit one triage entry
+   for the first comment, and emit separate entries with `category: "duplicate"`
+   for the rest, referencing the primary id. One fix, one reply to the first,
+   skip the rest.
+
 ## Copilot detection
 
 Set `copilot_present: true` if ANY of the following are true:
