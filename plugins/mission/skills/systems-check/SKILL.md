@@ -73,6 +73,8 @@ If `findings` contains no item with severity `blocker`, `major`, or `minor`:
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"...\",\"phase\":\"systems-check\",\"event\":\"completed\"}"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "docking"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
 echo "Systems check clear — no significant findings."
 ```
 

@@ -166,7 +166,14 @@ Ready for liftoff? [Y/n]  (or pass --auto to skip this confirmation)
 If the user says `n` or provides feedback, re-dispatch the Flight Director with
 the user's feedback as revision instructions, and repeat from Step 6.
 
-If the user says `y` (or `--auto` was passed), print:
+If the user says `y` (or `--auto` was passed):
+
+```bash
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "liftoff"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
+```
+
+Print:
 
 ```
 All systems go — mission is ready for liftoff on issue #N.

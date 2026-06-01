@@ -130,6 +130,8 @@ For each VERDICT:
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"liftoff\",\"event\":\"completed\"}"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "systems-check"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
 echo "All crew reported in — liftoff complete."
 ```
 
