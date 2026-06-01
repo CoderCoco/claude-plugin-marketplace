@@ -44,7 +44,8 @@ BASE_SHA=$(git rev-parse "origin/$BASE")
 SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | \
   sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50 | sed 's/-$//')
 BRANCH="claude/issue-${ISSUE_NUM}-${SLUG}"
-WORKTREE_PATH="${HOME}/wt/issue-${ISSUE_NUM}"
+REPO_ROOT=$(git rev-parse --show-toplevel)
+WORKTREE_PATH="${REPO_ROOT}/.claude/worktrees/issue-${ISSUE_NUM}-${SLUG}"
 
 # Create branch from base if it doesn't exist
 git show-ref --verify --quiet "refs/heads/$BRANCH" || \
