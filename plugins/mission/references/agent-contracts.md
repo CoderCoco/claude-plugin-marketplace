@@ -50,28 +50,21 @@ plan_problem: <only if status=plan_problem>
 
 ## Flight Controller — ### VERDICT
 
+One entry per CI/local check discovered, in CI execution order. Check names come from the CI step name where available, otherwise a descriptive label. The `acceptance` check is always last.
+
 ```
 ### VERDICT
 task: <crew member name>
 verdict: PASS | FAIL
 checks:
-  - name: tests
+  - name: <CI step name or label — e.g. "Run tests", "tsc --noEmit", "ESLint">
+    source: github-actions | circleci | local-discovery
     result: pass | fail | skipped
     output: |
       <first 30 + last 30 lines if long>
-    reason: <if skipped>
-  - name: lint
-    result: pass | fail | skipped
-    output: |
-      <relevant lines>
-  - name: typecheck
-    result: pass | fail | skipped
-    output: |
-      <relevant lines>
-  - name: build
-    result: pass | fail | skipped
-    reason: <if skipped>
+    reason: <if skipped — e.g. "requires secrets", "deploy step">
   - name: acceptance
+    source: mission-control
     result: pass | fail
     note: <one-line judgement>
 fixes_needed:
