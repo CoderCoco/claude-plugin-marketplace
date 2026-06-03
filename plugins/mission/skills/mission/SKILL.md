@@ -1,153 +1,130 @@
 ---
 name: mission
-description: Use when the user wants to start or advance the full end-to-end mission workflow for a GitHub issue. Trigger on "/mission <N>", "mission issue N", "continue mission", "/mission --status", "/mission --finish", or any signal that the user wants to orchestrate an issue through plan→build→review→PR→comments. This is the top-level orchestrator; it reads state and dispatches the correct phase skill.
+description: Use when the user wants to start or advance the full end-to-end mission workflow for a GitHub issue. Trigger on "/mission <N>", "mission issue N", "continue mission", "/mission --status", or any signal that the user wants to orchestrate an issue through plan→build→review→PR. This is the top-level orchestrator — it resolves the issue number, looks up any prior run ID for resumability, and invokes the mission workflow.
 ---
 
-# /mission — State Machine Dispatcher
+# /mission — Workflow Dispatcher
 
-Read mission state for the given issue and run the next phase. Resumable:
-re-run after any restart to pick up where the mission left off.
-
-**Key references:** `references/mission-state.md` (state schema) · `references/agent-contracts.md` (sub-agent contracts) · `references/crew-roster.md` (task name roster) · `references/halt-protocol.md` (halt banner format)
+Resolve the issue number, find any prior run, and invoke (or resume) the mission
+workflow. The workflow runs start-to-finish and produces a valid PR.
 
 ## Step 1: Parse arguments
 
+Supported invocations:
+- `/mission 42` — start or resume
+- `/mission 42 --status` — show run ID and progress link
+- `/mission 42 --abandon` — clear saved run ID
+- `/mission 42 --answers "answer 1; answer 2"` — re-run with answers to Flight Director questions
+
 ```bash
-# /mission <issue_number> [--auto] [--status] [--finish] [--abandon]
 ISSUE_NUM="${ARG1:-}"
 FLAG="${ARG2:-}"
+ANSWERS="${ARG3:-}"
 
-# Infer issue number from current branch if not provided
+# FLAG may be in ARG1 position (e.g. /mission --status when on a mission branch)
+if [ -z "$ISSUE_NUM" ] || [[ "$ISSUE_NUM" == --* ]]; then
+  FLAG="${ISSUE_NUM:-$FLAG}"
+  ISSUE_NUM=""
+fi
+
+# --answers "..." may be the only extra arg: /mission 42 --answers "..."
+if [[ "$FLAG" == --answers ]]; then
+  ANSWERS="$ANSWERS"  # ARG3 already holds the value
+elif [[ "$FLAG" == --answers=* ]]; then
+  ANSWERS="${FLAG#--answers=}"
+  FLAG=""
+fi
+
+# Infer from branch name if not provided
 if [ -z "$ISSUE_NUM" ]; then
   BRANCH=$(git branch --show-current)
   ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
 fi
-[ -n "$ISSUE_NUM" ] || { echo "Usage: /mission <issue_number>"; exit 1; }
+
+[ -n "$ISSUE_NUM" ] || { echo "Usage: /mission <issue_number> [--status|--abandon|--answers \"...\"]"; exit 1; }
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 ```
 
 ## Step 2: Handle --status
 
 If `$FLAG == "--status"`:
+
 ```bash
-STATE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-state-read.sh" "$ISSUE_NUM" 2>/dev/null) || {
-  echo "No mission state found for issue #$ISSUE_NUM. Run /mission $ISSUE_NUM to start."
-  exit 0
-}
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-print-log.sh" "$ISSUE_NUM"
+RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
+if [ -f "$RUN_ID_FILE" ]; then
+  RUN_ID=$(cat "$RUN_ID_FILE")
+  echo "Mission #${ISSUE_NUM} — workflow run: ${RUN_ID}"
+  echo "To resume: /mission ${ISSUE_NUM}"
+  echo "View live progress with: /workflows"
+else
+  echo "No mission run found for issue #${ISSUE_NUM}. Run /mission ${ISSUE_NUM} to start."
+fi
 exit 0
 ```
 
-## Step 3: Handle --finish
-
-If `$FLAG == "--finish"`:
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-state-update.sh" "$ISSUE_NUM" phase "done"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-state-update.sh" "$ISSUE_NUM" history_append \
-  "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"done\",\"event\":\"finished\"}"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/mission-print-log.sh" "$ISSUE_NUM"
-echo "Mission complete. Good work, Mission Control."
-exit 0
-```
-
-## Step 4: Handle --abandon
+## Step 3: Handle --abandon
 
 If `$FLAG == "--abandon"`:
-```bash
-STATE_FILE="${CLAUDE_PLUGIN_DATA}/mission-state/issue-${ISSUE_NUM}.json"
-if [ -f "$STATE_FILE" ]; then
-  TITLE=$(jq -r '.issue.title // "(unknown)"' "$STATE_FILE")
-  echo "This will permanently remove all mission state for:"
-  echo "  Issue #${ISSUE_NUM}: ${TITLE}"
-  echo "  File: ${STATE_FILE}"
-else
-  echo "No state file found for issue #${ISSUE_NUM} — nothing to remove."
-  exit 0
-fi
-```
 
-Ask: "Type `yes` to confirm removal, or press Enter to cancel."
+Ask: "This will clear the saved run ID for issue #${ISSUE_NUM}. The workflow journal
+is preserved (you can still resume manually). Type `yes` to confirm."
 
 On `yes`:
 ```bash
-rm "$STATE_FILE"
-echo "Mission state removed."
+RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
+rm -f "$RUN_ID_FILE"
+echo "Mission run cleared for issue #${ISSUE_NUM}."
 exit 0
 ```
 
-On anything else: print "Abandoned — state preserved." and `exit 0`.
-
-## Step 5: Read or initialise state
+## Step 4: Look up prior run ID
 
 ```bash
-SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM" 2>/dev/null) || STATE=""
+mkdir -p "${CLAUDE_PLUGIN_DATA}/mission-runs"
+RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
+PRIOR_RUN_ID=""
+[ -f "$RUN_ID_FILE" ] && PRIOR_RUN_ID=$(cat "$RUN_ID_FILE")
 ```
 
-If `STATE` is empty: this is a fresh mission. Print `"Starting mission for issue #$ISSUE_NUM…"` and dispatch `/pre-launch $ISSUE_NUM $FLAG`.
+## Step 5: Invoke the mission workflow
 
-Otherwise print `"Resuming mission #$ISSUE_NUM — phase: $PHASE ($PHASE_STATUS)"` before dispatching.
+Call the Workflow tool with the mission script:
 
-## Step 6: Decide next phase
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/mission.js",
+  resumeFromRunId: <PRIOR_RUN_ID if non-empty, otherwise omit>,
+  args: {
+    issue_number: <ISSUE_NUM as integer>,
+    repo: "<REPO>",
+    answers: "<ANSWERS if non-empty, otherwise omit>"
+  }
+})
+```
+
+**When to omit `resumeFromRunId`:** If `--answers` was passed and a prior run ID
+exists, still resume — the changed FD prompt causes a cache miss on that agent
+alone, so the Flight Director re-runs with the answers while all other completed
+agents return instantly from cache.
+
+This call returns a `runId` (e.g. `wf_abc123`) in the tool result alongside the
+workflow output. Save it immediately for future resume:
 
 ```bash
-PHASE=$(echo "$STATE" | jq -r '.phase')
-PHASE_STATUS=$(echo "$STATE" | jq -r '.phase_status')
+echo "<runId>" > "$RUN_ID_FILE"
 ```
 
-Decision table:
+## Step 6: Report completion
 
-| phase | phase_status | Action |
-|---|---|---|
-| `pre-launch` | `pending` or `in_progress` | Dispatch `/pre-launch $ISSUE_NUM $FLAG` |
-| `pre-launch` | `completed` | Advance phase to `liftoff`, dispatch `/liftoff $ISSUE_NUM` |
-| `pre-launch` | `halted` | Print halt message, exit |
-| `liftoff` | `pending` or `in_progress` | Dispatch `/liftoff $ISSUE_NUM` |
-| `liftoff` | `completed` | Advance to `systems-check`, dispatch `/systems-check $ISSUE_NUM` |
-| `liftoff` | `halted` | Print halt message, exit |
-| `systems-check` | `pending` or `in_progress` | Dispatch `/systems-check $ISSUE_NUM` |
-| `systems-check` | `completed` | Advance to `docking`, dispatch `/docking $ISSUE_NUM` |
-| `systems-check` | `halted` | Print halt message, exit |
-| `docking` | `pending` or `in_progress` | Dispatch `/docking $ISSUE_NUM` |
-| `docking` | `completed` | Advance to `comms`, dispatch `/comms $ISSUE_NUM` |
-| `docking` | `halted` | Print halt message, exit |
-| `comms` | any | Dispatch `/comms $ISSUE_NUM` (idempotent — timestamp filter skips already-seen comments) |
-| `done` | any | Print final log, exit |
+If the workflow returns successfully, print:
 
-**Advancing phase:** Before dispatching the next phase, update state:
-```bash
-bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "<next-phase>"
-bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
+```
+Mission complete!
+  Issue: #<issue_number>
+  PR: #<pr_number> — <pr_url>
+
+Run /comms <issue_number> when PR reviews arrive.
 ```
 
-Both updates must succeed. If the second update fails:
-```bash
-bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "halted"
-bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" halted_reason \
-  "Phase advance to <next-phase> failed — state may be partially updated."
-echo "🚨 ABORT SEQUENCE — mission halted"
-echo ""
-echo "  Reason: Phase advance to <next-phase> failed (state write error)."
-echo ""
-echo "  Where we are:"
-echo "    Issue #$ISSUE_NUM, phase may be partially advanced — check with /mission $ISSUE_NUM --status"
-echo ""
-echo "  Your options:"
-echo "    [1] Re-run /mission $ISSUE_NUM to retry the advance (recommended)"
-echo "    [2] Abort mission (state preserved — run /mission $ISSUE_NUM to resume)"
-echo ""
-echo "  Enter a number, or describe what you want."
-exit 1
-```
-
-**Halt message format:** Load `references/halt-protocol.md` for the exact
-banner and option format. Always show the halted_reason from state.
-
-**`--auto` flag:** Pass through to `/pre-launch` only (skips post-plan confirmation).
-
-## Step 7: Done state
-
-```bash
-bash "$SCRIPT_DIR/mission-print-log.sh" "$ISSUE_NUM"
-echo "Mission for issue #$ISSUE_NUM is complete. Good work, Mission Control."
-```
+If the workflow throws an error, the error message explains what failed. The run ID
+is already saved — re-run `/mission <N>` to resume from where it stopped.
