@@ -88,11 +88,16 @@ PRIOR_RUN_ID=""
 
 ## Step 5: Invoke the mission workflow
 
-Call the Workflow tool with the mission script:
+Read the workflow script and call the Workflow tool with it inline.
+Using `script:` (not `scriptPath:`) is required for `args` to be passed correctly.
+
+```bash
+WORKFLOW_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/mission-workflow.js")
+```
 
 ```
 Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/mission.js",
+  script: "<WORKFLOW_SCRIPT>",
   resumeFromRunId: <PRIOR_RUN_ID if non-empty, otherwise omit>,
   args: {
     issue_number: <ISSUE_NUM as integer>,

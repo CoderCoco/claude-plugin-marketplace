@@ -1,5 +1,5 @@
 export const meta = {
-  name: 'comms',
+  name: 'comms-workflow',
   description: 'Watch a PR for new review comments, address actionable ones, auto-reply to questions — loops until merged',
   phases: [
     { title: 'Fetch',  detail: 'Check PR status and new comments since last poll' },

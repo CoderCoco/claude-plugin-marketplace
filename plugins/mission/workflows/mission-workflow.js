@@ -1,5 +1,5 @@
 export const meta = {
-  name: 'mission',
+  name: 'mission-workflow',
   description: 'Plan, implement, review, and open a PR for a GitHub issue — end to end',
   phases: [
     { title: 'Pre-launch',    detail: 'Flight Director reads issue and produces task plan' },

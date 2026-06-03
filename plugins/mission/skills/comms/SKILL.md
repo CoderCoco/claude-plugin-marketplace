@@ -126,11 +126,16 @@ LAST_SEEN_AT="1970-01-01T00:00:00Z"
 
 ## Step 6: Invoke the comms workflow
 
-Call the Workflow tool:
+Read the workflow script and call the Workflow tool with it inline.
+Using `script:` (not `scriptPath:`) is required for `args` to be passed correctly.
+
+```bash
+WORKFLOW_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/comms-workflow.js")
+```
 
 ```
 Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/comms.js",
+  script: "<WORKFLOW_SCRIPT>",
   resumeFromRunId: <PRIOR_RUN_ID if non-empty, otherwise omit>,
   args: {
     issue_number:  <ISSUE_NUM as integer>,
