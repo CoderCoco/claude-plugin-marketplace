@@ -11,10 +11,15 @@ approval), resolve threads, and re-request Copilot review after any push.
 ## Step 1: Load state and validate
 
 ```bash
-export CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/plugins/data/mission-codercoco-custom-plugin-marketplace}"
 SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+ISSUE_NUM="${ARG1:-}"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM")
 [ "$(echo "$STATE" | jq -r '.phase')" = "comms" ] || { echo "Not in comms phase"; exit 1; }
+[ "$(echo "$STATE" | jq -r '.phase_status')" = "halted" ] && {
+  echo "Comms halted. Reason: $(echo "$STATE" | jq -r '.halted_reason')"
+  echo "Resolve the halt condition then re-run /comms $ISSUE_NUM."
+  exit 1
+}
 WORKTREE_PATH=$(echo "$STATE" | jq -r '.branch.worktree_path')
 ISSUE_NUM=$(echo "$STATE" | jq -r '.issue.number')
 REPO=$(echo "$STATE" | jq -r '.issue.repo')
@@ -26,6 +31,12 @@ REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
 ```
 
 If `$PWD != $WORKTREE_PATH`, call `EnterWorktree` with `path: $WORKTREE_PATH`.
+
+```bash
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "in_progress"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
+  "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"comms\",\"event\":\"started\"}"
+```
 
 ## Step 2: Fetch new comments
 
@@ -91,21 +102,12 @@ NEW_COUNT=$(echo "$COMMENTS" | jq length)
 
 ### Step 2b: Fetch review thread map (for resolution)
 
+Read `${CLAUDE_PLUGIN_ROOT}/references/comms-queries.md` — **Thread Map Query**. Run that query with
+`$OWNER`, `$REPO_NAME`, and `$PR_NUM` and store the result:
+
 ```bash
 THREAD_MAP=$(gh api graphql \
-  -f query='query($owner:String!,$name:String!,$number:Int!){
-    repository(owner:$owner,name:$name){
-      pullRequest(number:$number){
-        reviewThreads(first:100){
-          nodes{
-            id
-            isResolved
-            comments(first:1){nodes{databaseId}}
-          }
-        }
-      }
-    }
-  }' \
+  -f query='<Thread Map Query from comms-queries.md>' \
   -f owner="$OWNER" -f name="$REPO_NAME" -F number="$PR_NUM" \
   | jq '.data.repository.pullRequest.reviewThreads.nodes |
         map({
@@ -145,14 +147,21 @@ if [ "$AMBIGUOUS_COUNT" -gt 0 ]; then
     "CAPCOM found ambiguous comments — Mission Control must classify them."
   echo "🚨 ABORT SEQUENCE — comms halted"
   echo ""
-  echo "  Reason: CAPCOM could not classify these comments:"
+  echo "  Reason: CAPCOM could not classify $AMBIGUOUS_COUNT comment(s) — your input is needed."
+  echo ""
+  echo "  Where we are:"
+  echo "    Issue #$ISSUE_NUM, comms phase — PR #$PR_NUM triage blocked"
+  echo ""
+  echo "  Ambiguous comments:"
   echo "$TRIAGE" | jq -r '.comments[] | select(.category == "ambiguous") | "    - \(.author): \(.body[:80])"'
   echo ""
   echo "  Your options:"
-  echo "    [1] Tell me how to handle each ambiguous comment"
+  echo "    [1] Tell me how to handle each ambiguous comment (recommended)"
   echo "    [2] Ignore ambiguous comments and continue"
-  echo "    [3] Abort mission (state preserved)"
-  exit 0
+  echo "    [3] Abort mission (state preserved — run /mission $ISSUE_NUM to resume)"
+  echo ""
+  echo "  Enter a number, or describe what you want."
+  exit 1
 fi
 ```
 
@@ -161,9 +170,26 @@ fi
 Get actionable items from triage. Promote to repair tasks (origin="comms").
 Run parallel Astronaut+Flight Controller round (same as liftoff).
 
-After all PASSed:
+After all PASSed, set `COMMENT_ID=$(echo "$COMMENT" | jq -r '.id')` for each actioned comment before running the thread-resolution snippet below:
 ```bash
-git push origin "$BRANCH"
+if ! git push origin "$BRANCH"; then
+  bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "halted"
+  bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" halted_reason \
+    "git push failed after comms fixes. Resolve the conflict then re-run /comms $ISSUE_NUM."
+  echo "🚨 ABORT SEQUENCE — comms halted"
+  echo ""
+  echo "  Reason: git push failed after comms fixes."
+  echo ""
+  echo "  Where we are:"
+  echo "    Issue #$ISSUE_NUM, comms phase — PR #$PR_NUM fixes committed but not pushed"
+  echo ""
+  echo "  Your options:"
+  echo "    [1] Resolve the push conflict and re-run /comms $ISSUE_NUM (recommended)"
+  echo "    [2] Abort mission (state preserved — run /mission $ISSUE_NUM to resume)"
+  echo ""
+  echo "  Enter a number, or describe what you want."
+  exit 1
+fi
 PUSH_SHA=$(git rev-parse HEAD)
 ```
 
@@ -188,7 +214,9 @@ fi
 
 ## Step 5: Answer questions (with approval)
 
-For each `category: "question"` item with a `reply_draft`:
+For each `category: "question"` item with a `reply_draft`, set
+`COMMENT_ID=$(echo "$COMMENT" | jq -r '.id')` before running the reply or
+thread-resolution snippet below:
 
 ```
 Draft reply to <author>'s question:
@@ -200,7 +228,15 @@ Post this reply? [Y/edit/skip]
 
 Wait for approval. On Y:
 ```bash
-gh pr comment "$PR_NUM" --repo "$REPO" --body "<draft>"
+# For inline question comments (type == "inline_comment"), reply in-thread instead:
+if [ "$(echo "$COMMENT" | jq -r '.type')" = "inline_comment" ]; then
+  gh api "repos/$REPO/pulls/$PR_NUM/comments" \
+    -X POST \
+    -f body="<draft>" \
+    -F in_reply_to="$(echo "$COMMENT" | jq -r '.id')" > /dev/null
+else
+  gh pr comment "$PR_NUM" --repo "$REPO" --body "<draft>"
+fi
 ```
 
 For inline question comments, also resolve the thread immediately after posting:
@@ -236,7 +272,7 @@ bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
 ## Step 8: Done check
 
 ```bash
-# Re-fetch thread map to reflect resolutions made this round
+# Re-fetch after this round's resolutions. first:100 limit — see comms-queries.md.
 UPDATED_THREAD_MAP=$(gh api graphql \
   -f query='query($owner:String!,$name:String!,$number:Int!){
     repository(owner:$owner,name:$name){
@@ -275,4 +311,9 @@ If >= 3 repair tasks were fixed and committed this round:
 We pushed 3 fixes. Want the Systems Inspector to review them before the next
 reviewer cycle? [y/N]
 ```
-If yes: advance `phase` back to `systems-check`, reset `phase_status` to `pending`.
+If yes:
+```bash
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "systems-check"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
+```
+Immediately invoke the `mission:systems-check` skill with `$ISSUE_NUM` as the argument.

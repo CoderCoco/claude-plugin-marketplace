@@ -5,6 +5,8 @@ description: Use when the user wants to add new code-review findings to the Syst
 
 # /mission-debrief — Update the Review Rubric
 
+> **Standalone utility** — this skill has no mission state interaction and dispatches no sub-agents. It can be invoked at any time, independently of any active mission.
+
 Take external findings (review comments, postmortem notes, pasted writeups)
 and fold them into `references/review-rubric.md`.
 
@@ -15,13 +17,21 @@ Input can come from any of:
 2. **File:** `/mission-debrief < findings.md` — read from file.
 3. **PR:** `/mission-debrief --pr <N>` — fetch review comments via
    `gh pr view <N> --json reviews,comments`.
-4. **Interactive:** no args — ask "Paste your findings below, then send."
+4. **Interactive:** no args — ask:
+   "Paste your findings below. When done, end with a line containing only `---` and send."
 
 ## Step 2: Read current rubric
 
 ```bash
+[ -n "$CLAUDE_PLUGIN_ROOT" ] || {
+  echo "ERROR: CLAUDE_PLUGIN_ROOT is not set. Ensure the mission plugin is installed correctly."
+  exit 1
+}
 RUBRIC_PATH="${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md"
-RUBRIC=$(cat "$RUBRIC_PATH")
+[ -f "$RUBRIC_PATH" ] || {
+  echo "ERROR: Cannot find review-rubric.md at: $RUBRIC_PATH"
+  exit 1
+}
 ```
 
 Extract:
@@ -34,9 +44,12 @@ Extract:
 For each finding in the input:
 
 1. **Extract:** title/summary, optional file:line, optional severity hint.
-2. **Match to category:** does it fit an existing rubric category
-   (semantic correctness, portability, boundary, hygiene, complexity,
-   test quality)?
+2. **Match to category:** derive the available categories dynamically from the
+   rubric's section headers:
+   ```bash
+   CATEGORIES=$(grep '^## [0-9]' "$RUBRIC_PATH" | sed 's/^## [0-9]*\. //')
+   ```
+   Match the finding to the closest category name from `$CATEGORIES`.
 3. **Dedup check:** is there already an entry in the rubric that covers
    the same concern? If yes → mark as `duplicate`.
 4. **Declined check:** does it appear in the `## Declined / Out-of-scope`
@@ -59,8 +72,11 @@ Findings ready for debrief:
 Apply these changes? [Y / edit N / abort]
 ```
 
+If all findings are marked `duplicate` or `declined`, print:
+"No new findings — rubric is already up-to-date." and exit 0.
+
 On `edit N`: let the user change row N's category or action. Re-display.
-On `abort`: exit without writing.
+On `abort`: print "Debrief aborted — rubric unchanged." and exit 0.
 
 ## Step 5: Write updates to rubric
 
@@ -80,8 +96,15 @@ Show a diff of the rubric changes and ask: "Does this look right? [Y/n]"
 
 On Y:
 ```bash
+# cd to plugin root — ensures commit lands on the plugin repo, not a mission worktree branch.
+cd "$CLAUDE_PLUGIN_ROOT"
 git add "$RUBRIC_PATH"
-git commit -m "docs(mission): update review rubric with N pitfalls via /mission-debrief"
+git diff --cached --quiet && {
+  echo "Nothing to commit — rubric already up-to-date."
+  exit 0
+}
+COUNT=$(git diff --cached "$RUBRIC_PATH" | grep '^+[^+]' | grep -c '^' || true)
+git commit -m "docs(mission): add $COUNT new entries to review rubric via /mission-debrief"
 ```
 
 Print: "Mission debrief complete. The Systems Inspector will check for these on the next mission."

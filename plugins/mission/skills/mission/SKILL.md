@@ -8,6 +8,8 @@ description: Use when the user wants to start or advance the full end-to-end mis
 Read mission state for the given issue and run the next phase. Resumable:
 re-run after any restart to pick up where the mission left off.
 
+**Key references:** `references/mission-state.md` (state schema) · `references/agent-contracts.md` (sub-agent contracts) · `references/crew-roster.md` (task name roster) · `references/halt-protocol.md` (halt banner format)
+
 ## Step 1: Parse arguments
 
 ```bash
@@ -51,11 +53,29 @@ exit 0
 ## Step 4: Handle --abandon
 
 If `$FLAG == "--abandon"`:
+```bash
+STATE_FILE="${CLAUDE_PLUGIN_DATA}/mission-state/issue-${ISSUE_NUM}.json"
+if [ -f "$STATE_FILE" ]; then
+  TITLE=$(jq -r '.issue.title // "(unknown)"' "$STATE_FILE")
+  echo "This will permanently remove all mission state for:"
+  echo "  Issue #${ISSUE_NUM}: ${TITLE}"
+  echo "  File: ${STATE_FILE}"
+else
+  echo "No state file found for issue #${ISSUE_NUM} — nothing to remove."
+  exit 0
+fi
 ```
-Are you sure you want to abort the mission for issue #$ISSUE_NUM?
-State file will be removed. [y/N]
+
+Ask: "Type `yes` to confirm removal, or press Enter to cancel."
+
+On `yes`:
+```bash
+rm "$STATE_FILE"
+echo "Mission state removed."
+exit 0
 ```
-On y: `rm "${CLAUDE_PLUGIN_DATA}/mission-state/issue-${ISSUE_NUM}.json"`
+
+On anything else: print "Abandoned — state preserved." and `exit 0`.
 
 ## Step 5: Read or initialise state
 
@@ -64,7 +84,9 @@ SCRIPT_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 STATE=$(bash "$SCRIPT_DIR/mission-state-read.sh" "$ISSUE_NUM" 2>/dev/null) || STATE=""
 ```
 
-If `STATE` is empty: this is a fresh mission. Dispatch `/pre-launch $ISSUE_NUM $FLAG`.
+If `STATE` is empty: this is a fresh mission. Print `"Starting mission for issue #$ISSUE_NUM…"` and dispatch `/pre-launch $ISSUE_NUM $FLAG`.
+
+Otherwise print `"Resuming mission #$ISSUE_NUM — phase: $PHASE ($PHASE_STATUS)"` before dispatching.
 
 ## Step 6: Decide next phase
 
@@ -89,13 +111,33 @@ Decision table:
 | `docking` | `pending` or `in_progress` | Dispatch `/docking $ISSUE_NUM` |
 | `docking` | `completed` | Advance to `comms`, dispatch `/comms $ISSUE_NUM` |
 | `docking` | `halted` | Print halt message, exit |
-| `comms` | any | Dispatch `/comms $ISSUE_NUM` (idempotent) |
+| `comms` | any | Dispatch `/comms $ISSUE_NUM` (idempotent — timestamp filter skips already-seen comments) |
 | `done` | any | Print final log, exit |
 
 **Advancing phase:** Before dispatching the next phase, update state:
 ```bash
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase "<next-phase>"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "pending"
+```
+
+Both updates must succeed. If the second update fails:
+```bash
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "halted"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" halted_reason \
+  "Phase advance to <next-phase> failed — state may be partially updated."
+echo "🚨 ABORT SEQUENCE — mission halted"
+echo ""
+echo "  Reason: Phase advance to <next-phase> failed (state write error)."
+echo ""
+echo "  Where we are:"
+echo "    Issue #$ISSUE_NUM, phase may be partially advanced — check with /mission $ISSUE_NUM --status"
+echo ""
+echo "  Your options:"
+echo "    [1] Re-run /mission $ISSUE_NUM to retry the advance (recommended)"
+echo "    [2] Abort mission (state preserved — run /mission $ISSUE_NUM to resume)"
+echo ""
+echo "  Enter a number, or describe what you want."
+exit 1
 ```
 
 **Halt message format:** Load `references/halt-protocol.md` for the exact

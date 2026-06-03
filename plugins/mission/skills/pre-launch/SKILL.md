@@ -12,7 +12,7 @@ flight plan to the mission state file, and confirm with the user before liftoff.
 
 ```bash
 # Prefer argument, then branch name, then ask
-ISSUE_NUM="${ARGS:-}"
+ISSUE_NUM="${ARG1:-}"
 if [ -z "$ISSUE_NUM" ]; then
   BRANCH=$(git branch --show-current)
   ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
@@ -52,8 +52,28 @@ git show-ref --verify --quiet "refs/heads/$BRANCH" || \
   git branch "$BRANCH" "origin/$BASE"
 
 # Create worktree if it doesn't exist
-[ -d "$WORKTREE_PATH" ] || \
+if [ ! -d "$WORKTREE_PATH" ]; then
   git worktree add "$WORKTREE_PATH" "$BRANCH"
+else
+  # Guard: ensure an existing worktree is on the expected branch
+  WT_BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null)
+  if [ "$WT_BRANCH" != "$BRANCH" ]; then
+    echo "🚨 ABORT SEQUENCE — pre-launch halted"
+    echo ""
+    echo "  Reason: Worktree at $WORKTREE_PATH is on branch '$WT_BRANCH', expected '$BRANCH'."
+    echo ""
+    echo "  Where we are:"
+    echo "    Issue #$ISSUE_NUM, pre-launch phase — worktree conflict (no state written yet)"
+    echo ""
+    echo "  Your options:"
+    echo "    [1] Remove the stale worktree then re-run /pre-launch $ISSUE_NUM (recommended):"
+    echo "          git worktree remove --force $WORKTREE_PATH"
+    echo "    [2] Abort (no state written — safe to stop without using /mission)"
+    echo ""
+    echo "  Enter a number, or describe what you want."
+    exit 1
+  fi
+fi
 ```
 
 Call `EnterWorktree` with `path: $WORKTREE_PATH` to switch the session into the new worktree.
@@ -78,16 +98,35 @@ if [ "$PHASE" != "pre-launch" ] || [ "$PHASE_STATUS" = "completed" ]; then
   echo "Pre-launch already complete. Run /liftoff $ISSUE_NUM to continue."
   exit 0
 fi
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "in_progress"
+bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
+  "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"pre-launch\",\"event\":\"started\"}"
 ```
 
 ## Step 5: Move project board card to In Progress
 
 ```bash
-PROJECT_ID=$(gh issue view "$ISSUE_NUM" --repo "$REPO" \
-  --json projectItems --jq '.projectItems[0].id // empty')
-if [ -n "$PROJECT_ID" ]; then
-  gh issue edit "$ISSUE_NUM" --repo "$REPO" 2>/dev/null || true
+OWNER=$(echo "$REPO" | cut -d/ -f1)
+PROJECT_NUMBER=$(gh issue view "$ISSUE_NUM" --repo "$REPO" \
+  --json projectItems \
+  --jq '.projectItems[0].projectV2.number // empty' 2>/dev/null)
+if [ -n "$PROJECT_NUMBER" ]; then
+  ITEM_ID=$(gh project item-list "$PROJECT_NUMBER" --owner "$OWNER" --format json 2>/dev/null \
+    | jq -r ".items[] | select(.content.number == $ISSUE_NUM) | .id // empty")
+  if [ -n "$ITEM_ID" ]; then
+    FIELD_ID=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json 2>/dev/null \
+      | jq -r '.fields[] | select(.name == "Status") | .id // empty')
+    OPTION_ID=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json 2>/dev/null \
+      | jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name | test("(?i)progress")) | .id // empty')
+    PROJECT_ID=$(gh project list --owner "$OWNER" --format json 2>/dev/null \
+      | jq -r ".projects[] | select(.number == $PROJECT_NUMBER) | .id // empty")
+    if [ -n "$FIELD_ID" ] && [ -n "$OPTION_ID" ] && [ -n "$PROJECT_ID" ]; then
+      gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
+        --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID" 2>/dev/null || true
+    fi
+  fi
 fi
+# Silently skips if issue has no attached project.
 ```
 
 ## Step 6: Dispatch Flight Director
@@ -109,15 +148,53 @@ Agent(flight-director, context={
 })
 ```
 
-Parse the `### PLAN` / `### END PLAN` block from the Flight Director's response.
-If the Flight Director returns an `open_questions` list, surface them to the user
-before proceeding.
+Parse the `### PLAN` / `### END PLAN` block from the Flight Director's response:
+```bash
+PLAN_BLOCK=$(echo "$FLIGHT_DIRECTOR_RESPONSE" | \
+  sed -n '/^### PLAN$/,/^### END PLAN$/{ /^### /d; p; }')
+```
+
+If the Flight Director returns a non-empty `open_questions` list, surface them to
+the user before proceeding:
+
+```
+The Flight Director has questions before finalising the plan:
+
+  1. <question 1>
+  2. <question 2>
+
+Please answer these, then I'll re-dispatch the Flight Director with your answers.
+```
+
+Collect the user's answers, then re-dispatch the Flight Director with the answers
+appended to the revision instructions. Do not proceed to Step 7 until all questions
+are resolved.
 
 ## Step 7: Write flight plan to state
 
 Convert the Flight Director's tasks into the state-file task schema and write:
 
 ```bash
+# Verify PyYAML is available (required for PLAN block parsing)
+python3 -c "import yaml" 2>/dev/null || {
+  bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "halted"
+  bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" halted_reason \
+    "PyYAML not installed. Install with: pip install pyyaml"
+  echo "🚨 ABORT SEQUENCE — pre-launch halted"
+  echo ""
+  echo "  Reason: PyYAML is required to parse the flight plan but is not installed."
+  echo ""
+  echo "  Where we are:"
+  echo "    Issue #$ISSUE_NUM, pre-launch phase — flight plan received but cannot be parsed"
+  echo ""
+  echo "  Your options:"
+  echo "    [1] Install PyYAML and re-run /pre-launch $ISSUE_NUM (recommended): pip install pyyaml"
+  echo "    [2] Abort mission (state preserved — run /mission $ISSUE_NUM to resume)"
+  echo ""
+  echo "  Enter a number, or describe what you want."
+  exit 1
+}
+
 # Build tasks JSON array from PLAN block
 TASKS_JSON=$(echo "$PLAN_BLOCK" | python3 -c "
 import sys, json, yaml
@@ -141,7 +218,7 @@ print(json.dumps(tasks))
 
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" plan_tasks_replace "$TASKS_JSON"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" plan_next_alpha \
-  "$(echo "$PLAN_BLOCK" | grep '^next_alpha_index:' | awk '{print $2}')"
+  "$(echo "$PLAN_BLOCK" | python3 -c "import sys,yaml; print(yaml.safe_load(sys.stdin)['next_alpha_index'])")"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" history_append \
   "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"phase\":\"pre-launch\",\"event\":\"completed\",\"tasks\":$(echo "$TASKS_JSON" | jq length)}"
 bash "$SCRIPT_DIR/mission-state-update.sh" "$ISSUE_NUM" phase_status "completed"
