@@ -122,15 +122,17 @@ function computeRounds(tasks) {
 
 // ── Args ───────────────────────────────────────────────────────────────────────
 
-const issueNum = args.issue_number
-const repo = args.repo
+const _a = typeof args === 'string' ? JSON.parse(args) : (args || {})
+
+const issueNum = _a.issue_number
+const repo = _a.repo
 if (!issueNum || !repo) throw new Error('args must include issue_number and repo (e.g. "owner/name")')
 
 // Optional: answers to Flight Director open_questions from a prior run.
 // Providing this changes the FD prompt, causing a cache miss so the FD re-runs
 // with the answers rather than returning the same open_questions again.
-const answersCtx = args.answers
-  ? `\n\nThe user has answered your open questions:\n${args.answers}\nProceed with the full plan — do not return any open_questions.`
+const answersCtx = _a.answers
+  ? `\n\nThe user has answered your open questions:\n${_a.answers}\nProceed with the full plan — do not return any open_questions.`
   : ''
 
 // ── Phase 1: Pre-launch ────────────────────────────────────────────────────────

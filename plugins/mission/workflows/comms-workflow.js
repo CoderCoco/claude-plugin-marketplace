@@ -99,20 +99,22 @@ const COMMS_VERDICT_SCHEMA = {
 
 // ── Args ───────────────────────────────────────────────────────────────────────
 
-const issueNum    = args.issue_number
-const repo        = args.repo
-const prNum       = args.pr_number
-const branch      = args.branch
-const worktreePath = args.worktree_path
+const _a = typeof args === 'string' ? JSON.parse(args) : (args || {})
+
+const issueNum    = _a.issue_number
+const repo        = _a.repo
+const prNum       = _a.pr_number
+const branch      = _a.branch
+const worktreePath = _a.worktree_path
 
 if (!issueNum || !repo || !prNum || !branch || !worktreePath) {
   throw new Error('args must include issue_number, repo, pr_number, branch, worktree_path')
 }
 
-const POLL_SECS = args.poll_interval || 300  // default 5 minutes
-const MAX_ROUNDS = args.max_rounds || 24     // default ~2 hours at 5-min polls
+const POLL_SECS = _a.poll_interval || 300  // default 5 minutes
+const MAX_ROUNDS = _a.max_rounds || 24     // default ~2 hours at 5-min polls
 
-let lastSeenAt = args.last_seen_at || '1970-01-01T00:00:00Z'
+let lastSeenAt = _a.last_seen_at || '1970-01-01T00:00:00Z'
 let roundsDone = 0
 
 log(`Watching PR #${prNum} for issue #${issueNum} — polling every ${POLL_SECS}s, up to ${MAX_ROUNDS} rounds`)
