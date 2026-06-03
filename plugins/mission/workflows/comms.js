@@ -133,6 +133,7 @@ Run these four queries:
 
 1. PR-level comments:
    gh api "repos/${repo}/issues/${prNum}/comments" --paginate \\
+     | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
      | jq '[.[] | select(.created_at > "${lastSeenAt}") | {
          id: (.id | tostring), node_id, author: .user.login, body,
          url: .html_url, timestamp: .created_at,
@@ -141,6 +142,7 @@ Run these four queries:
 
 2. Review summary bodies (Copilot posts here):
    gh api "repos/${repo}/pulls/${prNum}/reviews" --paginate \\
+     | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
      | jq '[.[] | select((.submitted_at // .created_at) > "${lastSeenAt}" and .body != "" and .body != null) | {
          id: (.id | tostring), node_id, author: .user.login, body,
          url: .html_url, timestamp: (.submitted_at // .created_at),
@@ -149,6 +151,7 @@ Run these four queries:
 
 3. Inline review comments:
    gh api "repos/${repo}/pulls/${prNum}/comments" --paginate \\
+     | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
      | jq '[.[] | select(.created_at > "${lastSeenAt}") | {
          id: (.id | tostring), node_id, author: .user.login, body,
          url: .html_url, timestamp: .created_at,
