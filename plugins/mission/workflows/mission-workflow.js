@@ -88,11 +88,39 @@ const PR_SCHEMA = {
   },
 }
 
-const CHANGED_FILES_SCHEMA = {
+const SCOUT_SCHEMA = {
   type: 'object',
-  required: ['files'],
+  required: ['active_buckets', 'focus_areas'],
   properties: {
-    files: { type: 'array', items: { type: 'string' } },
+    active_buckets: {
+      type: 'array',
+      items: { type: 'string', enum: ['javascript', 'python', 'go', 'rust', 'shell', 'general'] },
+      description: 'Language buckets that have changed files in the diff',
+    },
+    focus_areas: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['bucket', 'files', 'focus'],
+        properties: {
+          bucket: { type: 'string' },
+          files:  { type: 'array', items: { type: 'string' } },
+          focus:  { type: 'string', description: 'What the inspector should pay special attention to' },
+        },
+      },
+    },
+    specialist_agents: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['label', 'prompt'],
+        properties: {
+          label:  { type: 'string', description: 'Short display label, e.g. "security", "perf", "api-contract"' },
+          prompt: { type: 'string', description: 'Full inspection prompt for this specialist' },
+        },
+      },
+      description: 'Additional targeted inspectors beyond language buckets (security, performance, API contract, migration safety, etc.)',
+    },
   },
 }
 
@@ -337,42 +365,50 @@ log('All tasks complete — liftoff successful')
 
 phase('Systems Check')
 
-const LANGUAGE_BUCKETS = [
-  { lang: 'javascript', exts: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'] },
-  { lang: 'python',     exts: ['.py'] },
-  { lang: 'go',         exts: ['.go'] },
-  { lang: 'rust',       exts: ['.rs'] },
-  { lang: 'shell',      exts: ['.sh', '.bash', '.zsh'] },
-  { lang: 'general',    exts: [] }, // catch-all for yaml, json, sql, config, etc.
-]
-
-// Detect which language buckets have changed files in the diff.
-const scoutResult = await agent(
-  `Run this command and return the list of changed files as a JSON array of strings:
-  git -C ${plan.worktree_path} diff --name-only origin/main...HEAD
-If the command produces no output, return an empty array.`,
-  { label: 'scout:changed-files', phase: 'Systems Check', schema: CHANGED_FILES_SCHEMA }
-)
-
-const changedFiles = scoutResult ? scoutResult.files : []
-log(`${changedFiles.length} file(s) changed — determining active language buckets…`)
-
-const specificBuckets = LANGUAGE_BUCKETS.filter(b => b.exts.length > 0)
-const activeLangs = new Set()
-for (const file of changedFiles) {
-  let covered = false
-  for (const bucket of specificBuckets) {
-    if (bucket.exts.some(ext => file.endsWith(ext))) {
-      activeLangs.add(bucket.lang)
-      covered = true
-      break
-    }
-  }
-  if (!covered) activeLangs.add('general')
+const LANGUAGE_BUCKET_EXTS = {
+  javascript: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'],
+  python:     ['.py'],
+  go:         ['.go'],
+  rust:       ['.rs'],
+  shell:      ['.sh', '.bash', '.zsh'],
 }
 
-const activeBuckets = LANGUAGE_BUCKETS.filter(b => activeLangs.has(b.lang))
-log(`Active buckets: ${activeBuckets.map(b => b.lang).join(', ') || 'none'}`)
+// Haiku scout reads the full diff and decides which language inspectors to activate,
+// what each should focus on, and whether any specialist agents are warranted.
+log('Scouting diff…')
+const scout = await agent(
+  `You are a triage agent for mission issue #${issueNum}. Read the full diff and decide what inspection is needed.
+
+1. Get the diff:
+   git -C ${plan.worktree_path} diff origin/main...HEAD
+
+2. Identify which language buckets have changed files:
+   - javascript: .ts .tsx .js .jsx .mts .cts
+   - python: .py
+   - go: .go
+   - rust: .rs
+   - shell: .sh .bash .zsh
+   - general: everything else (yaml, json, sql, config, markdown, etc.)
+
+3. For each active bucket, list the specific changed files and write a focused inspection directive (what patterns, risks, or invariants the inspector should pay special attention to given what actually changed — not generic advice).
+
+4. Decide if any specialist agents are warranted beyond the language inspectors. Only add specialists when genuinely needed — e.g.:
+   - "security": auth, crypto, permissions, secrets, injection-risk code changed
+   - "perf": hot paths, query patterns, memory allocation changed
+   - "api-contract": public API signatures, protocol definitions, or schema changed
+   - "migration-safety": database migrations or destructive schema changes
+   For each specialist, write a full, targeted inspection prompt (include the worktree path ${plan.worktree_path} and issue number #${issueNum}).
+
+Return active_buckets, focus_areas, and specialist_agents (omit specialist_agents or leave it empty if none are needed).`,
+  { label: 'scout', phase: 'Systems Check', schema: SCOUT_SCHEMA, model: 'haiku' }
+)
+
+const activeBucketNames = new Set(scout ? scout.active_buckets : [])
+const focusByBucket = {}
+if (scout && scout.focus_areas) scout.focus_areas.forEach(fa => { focusByBucket[fa.bucket] = fa })
+const specialistDefs = (scout && scout.specialist_agents) || []
+
+log(`Active buckets: ${[...activeBucketNames].join(', ') || 'none'} | Specialists: ${specialistDefs.map(s => s.label).join(', ') || 'none'}`)
 
 const SC_ATTEMPT_CAP = 3
 let scAttempts = 0 // counts completed repair rounds; inspections = scAttempts + 1
@@ -380,26 +416,40 @@ let scAttempts = 0 // counts completed repair rounds; inspections = scAttempts +
 while (true) {
   log(`Inspection round ${scAttempts + 1}${scAttempts > 0 ? ' (re-inspecting after repairs)' : ''}…`)
 
-  // ── Language inspectors (parallel — only buckets with matching files) ──────
+  // ── Language inspectors + specialists (parallel) ───────────────────────────
 
-  const inspections = await parallel(activeBuckets.map(bucket => () =>
-    agent(
-      `You are the ${bucket.lang} Systems Inspector for mission issue #${issueNum}, inspection round ${scAttempts + 1}.
+  const langInspectors = [...activeBucketNames].map(lang => () => {
+    const focus = focusByBucket[lang]
+    const extList = LANGUAGE_BUCKET_EXTS[lang] ? LANGUAGE_BUCKET_EXTS[lang].join(' ') : 'yaml, json, sql, config, and other non-language files'
+    const filesCtx = focus ? `\nChanged files in this bucket: ${focus.files.join(', ')}\nFocus especially on: ${focus.focus}` : ''
+    return agent(
+      `You are the ${lang} Systems Inspector for mission issue #${issueNum}, inspection round ${scAttempts + 1}.
 
-Review the ${bucket.lang} changes in worktree ${plan.worktree_path}:
+Review the ${lang} changes in worktree ${plan.worktree_path}:
   git -C ${plan.worktree_path} diff origin/main...HEAD
 
-Focus exclusively on ${bucket.lang} files (${bucket.lang === 'general' ? 'yaml, json, sql, config, and other non-language files' : bucket.exts.join(' ')}).
+Focus exclusively on ${lang} files (${extList}).${filesCtx}
 If no matching files were modified, return an empty findings array.
 Classify each finding: blocker | major | minor | nit`,
       {
-        label: `inspector:${bucket.lang}:r${scAttempts}`,
+        label: `inspector:${lang}:r${scAttempts}`,
         phase: 'Systems Check',
         schema: FINDINGS_SCHEMA,
         agentType: 'mission:systems-inspector',
       }
     )
-  ))
+  })
+
+  const specialistInspectors = specialistDefs.map(s => () =>
+    agent(s.prompt, {
+      label: `specialist:${s.label}:r${scAttempts}`,
+      phase: 'Systems Check',
+      schema: FINDINGS_SCHEMA,
+      agentType: 'mission:systems-inspector',
+    })
+  )
+
+  const inspections = await parallel([...langInspectors, ...specialistInspectors])
 
   const allFindings = inspections
     .filter(Boolean)
