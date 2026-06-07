@@ -88,6 +88,14 @@ const PR_SCHEMA = {
   },
 }
 
+const CHANGED_FILES_SCHEMA = {
+  type: 'object',
+  required: ['files'],
+  properties: {
+    files: { type: 'array', items: { type: 'string' } },
+  },
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 // Returns an ordered array of batches. Each batch contains tasks whose deps are
@@ -330,13 +338,41 @@ log('All tasks complete — liftoff successful')
 phase('Systems Check')
 
 const LANGUAGE_BUCKETS = [
-  { lang: 'javascript', exts: '.ts .tsx .js .jsx .mts .cts' },
-  { lang: 'python',     exts: '.py' },
-  { lang: 'go',         exts: '.go' },
-  { lang: 'rust',       exts: '.rs' },
-  { lang: 'shell',      exts: '.sh .bash .zsh' },
-  { lang: 'general',    exts: 'everything else (yaml, json, sql, config…)' },
+  { lang: 'javascript', exts: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'] },
+  { lang: 'python',     exts: ['.py'] },
+  { lang: 'go',         exts: ['.go'] },
+  { lang: 'rust',       exts: ['.rs'] },
+  { lang: 'shell',      exts: ['.sh', '.bash', '.zsh'] },
+  { lang: 'general',    exts: [] }, // catch-all for yaml, json, sql, config, etc.
 ]
+
+// Detect which language buckets have changed files in the diff.
+const scoutResult = await agent(
+  `Run this command and return the list of changed files as a JSON array of strings:
+  git -C ${plan.worktree_path} diff --name-only origin/main...HEAD
+If the command produces no output, return an empty array.`,
+  { label: 'scout:changed-files', phase: 'Systems Check', schema: CHANGED_FILES_SCHEMA }
+)
+
+const changedFiles = scoutResult ? scoutResult.files : []
+log(`${changedFiles.length} file(s) changed — determining active language buckets…`)
+
+const specificBuckets = LANGUAGE_BUCKETS.filter(b => b.exts.length > 0)
+const activeLangs = new Set()
+for (const file of changedFiles) {
+  let covered = false
+  for (const bucket of specificBuckets) {
+    if (bucket.exts.some(ext => file.endsWith(ext))) {
+      activeLangs.add(bucket.lang)
+      covered = true
+      break
+    }
+  }
+  if (!covered) activeLangs.add('general')
+}
+
+const activeBuckets = LANGUAGE_BUCKETS.filter(b => activeLangs.has(b.lang))
+log(`Active buckets: ${activeBuckets.map(b => b.lang).join(', ') || 'none'}`)
 
 const SC_ATTEMPT_CAP = 3
 let scAttempts = 0 // counts completed repair rounds; inspections = scAttempts + 1
@@ -344,16 +380,16 @@ let scAttempts = 0 // counts completed repair rounds; inspections = scAttempts +
 while (true) {
   log(`Inspection round ${scAttempts + 1}${scAttempts > 0 ? ' (re-inspecting after repairs)' : ''}…`)
 
-  // ── Language inspectors (parallel) ────────────────────────────────────────
+  // ── Language inspectors (parallel — only buckets with matching files) ──────
 
-  const inspections = await parallel(LANGUAGE_BUCKETS.map(bucket => () =>
+  const inspections = await parallel(activeBuckets.map(bucket => () =>
     agent(
       `You are the ${bucket.lang} Systems Inspector for mission issue #${issueNum}, inspection round ${scAttempts + 1}.
 
 Review the ${bucket.lang} changes in worktree ${plan.worktree_path}:
   git -C ${plan.worktree_path} diff origin/main...HEAD
 
-Focus exclusively on ${bucket.lang} files (${bucket.exts}).
+Focus exclusively on ${bucket.lang} files (${bucket.lang === 'general' ? 'yaml, json, sql, config, and other non-language files' : bucket.exts.join(' ')}).
 If no matching files were modified, return an empty findings array.
 Classify each finding: blocker | major | minor | nit`,
       {
