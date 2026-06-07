@@ -1,7 +1,7 @@
 {
   "name": "mission",
   "description": "End-to-end GitHub issue orchestrator — plan, build, review, open PR, handle comments. Resumable state machine. Space / mission control themed.",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "author": {
     "name": "CoderCoco"
   },

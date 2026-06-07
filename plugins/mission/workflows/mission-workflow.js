@@ -1,8 +1,7 @@
 export const meta = {
   name: 'mission-workflow',
-  description: 'Plan, implement, review, and open a PR for a GitHub issue — end to end',
+  description: 'Implement, review, and open a PR for a pre-planned GitHub issue — receives a complete Flight Director plan from the skill',
   phases: [
-    { title: 'Pre-launch',    detail: 'Flight Director reads issue and produces task plan' },
     { title: 'Liftoff',       detail: 'Astronauts implement tasks; FC verifies each round' },
     { title: 'Systems Check', detail: 'Language-bucketed inspectors review full diff' },
     { title: 'Docking',       detail: 'Push branch, open PR, move project board card' },
@@ -10,31 +9,6 @@ export const meta = {
 }
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
-
-const PLAN_SCHEMA = {
-  type: 'object',
-  required: ['issue_title', 'branch', 'worktree_path', 'tasks'],
-  properties: {
-    issue_title:    { type: 'string' },
-    branch:         { type: 'string', description: 'e.g. claude/issue-42-add-retry-logic' },
-    worktree_path:  { type: 'string', description: 'absolute path to the created worktree' },
-    open_questions: { type: 'array', items: { type: 'string' } },
-    tasks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['name', 'title', 'files', 'depends_on', 'acceptance'],
-        properties: {
-          name:       { type: 'string', description: 'NATO phonetic: Alpha, Bravo, Charlie…' },
-          title:      { type: 'string' },
-          files:      { type: 'array', items: { type: 'string' } },
-          depends_on: { type: 'array', items: { type: 'string' } },
-          acceptance: { type: 'string', description: 'one-sentence acceptance criterion' },
-        },
-      },
-    },
-  },
-}
 
 const CREW_REPORT_SCHEMA = {
   type: 'object',
@@ -162,58 +136,8 @@ const _a = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const issueNum = _a.issue_number
 const repo = _a.repo
-if (!issueNum || !repo) throw new Error('args must include issue_number and repo (e.g. "owner/name")')
-
-// Optional: answers to Flight Director open_questions from a prior run.
-// Providing this changes the FD prompt, causing a cache miss so the FD re-runs
-// with the answers rather than returning the same open_questions again.
-const answersCtx = _a.answers
-  ? `\n\nThe user has answered your open questions:\n${_a.answers}\nProceed with the full plan — do not return any open_questions.`
-  : ''
-
-// ── Phase 1: Pre-launch ────────────────────────────────────────────────────────
-
-phase('Pre-launch')
-log(`Planning issue #${issueNum} in ${repo}…`)
-
-const plan = await agent(
-  `You are the Flight Director. Plan the implementation for issue #${issueNum} in repo ${repo}.
-
-Steps:
-1. Read the issue:
-     gh issue view ${issueNum} --repo ${repo} --json number,title,body,labels | tr -d '\\000-\\010\\013\\014\\016-\\037'
-2. Determine the default branch:
-     BASE=$(gh repo view ${repo} --json defaultBranchRef --jq '.defaultBranchRef.name')
-3. Create a branch:
-     SLUG=$(echo "<issue title>" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-50 | sed 's/-$//')
-     BRANCH="claude/issue-${issueNum}-$SLUG"
-     REPO_ROOT=$(git rev-parse --show-toplevel)
-     git fetch origin "$BASE"
-     git show-ref --verify --quiet "refs/heads/$BRANCH" || git branch "$BRANCH" "origin/$BASE"
-4. Create a worktree (idempotent):
-     WORKTREE="$REPO_ROOT/.claude/worktrees/issue-${issueNum}-$SLUG"
-     [ -d "$WORKTREE" ] || git worktree add "$WORKTREE" "$BRANCH"
-5. Break the issue into ordered, file-scoped tasks. Assign NATO phonetic names (Alpha, Bravo…).
-   Express dependencies by name in depends_on. Each task needs a one-sentence acceptance criterion.
-   If anything is ambiguous, list it in open_questions instead of guessing.${answersCtx}
-
-Return the full structured plan including issue_title, branch, worktree_path, and tasks.`,
-  {
-    label: 'Flight Director',
-    phase: 'Pre-launch',
-    schema: PLAN_SCHEMA,
-    agentType: 'mission:flight-director',
-  }
-)
-
-if (!plan) throw new Error('Flight Director returned no plan')
-
-if (plan.open_questions && plan.open_questions.length > 0) {
-  const qs = plan.open_questions.map((q, i) => `  ${i + 1}. ${q}`).join('\n')
-  throw new Error(
-    `Flight Director needs answers before proceeding:\n${qs}\n\nAnswer these, then re-run:\n  /mission ${issueNum} --answers "answer 1; answer 2…"\n\nThe workflow will resume from where it stopped.`
-  )
-}
+const plan = _a.plan
+if (!issueNum || !repo || !plan) throw new Error('args must include issue_number, repo, and plan (produced by the Flight Director in the /mission skill)')
 
 log(`${plan.tasks.length} tasks on ${plan.branch}:`)
 plan.tasks.forEach(t => log(`  ${t.name}: ${t.title} [${t.files.join(', ')}]`))
