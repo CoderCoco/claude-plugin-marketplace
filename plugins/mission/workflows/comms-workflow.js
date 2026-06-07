@@ -18,10 +18,10 @@ const PR_STATUS_SCHEMA = {
     approved:             { type: 'boolean' },
     all_threads_resolved: { type: 'boolean' },
     ci_passing:           { type: 'boolean' },
-    changes_requested_by: {
+    reviewed_by: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Logins of reviewers whose latest review state is CHANGES_REQUESTED',
+      description: 'Logins of everyone who submitted a review (any state)',
     },
     max_comment_at: {
       type: 'string',
@@ -182,16 +182,16 @@ Run these queries:
      }' \\
      -f owner="$OWNER" -f name="$REPO_NAME" -F number=${prNum} \\
      | jq '.data.repository.pullRequest.reviewThreads.nodes')
-   # Get latest review state per reviewer (most recent review per user wins)
+   # Unique logins of everyone who submitted any review
    REVIEWS=$(gh api "repos/${repo}/pulls/${prNum}/reviews" --paginate \\
      | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
-     | jq '[group_by(.user.login)[] | sort_by(.submitted_at) | last | {login: .user.login, state: .state}]')
+     | jq '[.[].user.login] | unique')
    echo "$PR_STATE" | jq --argjson threads "$THREADS" --argjson reviews "$REVIEWS" '{
      merged: (.state == "MERGED"),
      approved: (.reviewDecision == "APPROVED"),
      ci_passing: ([.statusCheckRollup[]?.conclusion] | all(. == "SUCCESS") or length == 0),
      all_threads_resolved: ($threads | length == 0 or all(.isResolved)),
-     changes_requested_by: [$reviews[] | select(.state == "CHANGES_REQUESTED") | .login]
+     reviewed_by: $reviews
    }'
 
 Merge all comment arrays, deduplicate by id, sort by timestamp.
@@ -389,25 +389,18 @@ Return the commit SHA.`,
       { label: 'summary-comment', phase: 'Fix', model: 'haiku' }
     )
 
-    // Re-request review from anyone who had CHANGES_REQUESTED
-    const requestChangesReviewers = (status.changes_requested_by || []).filter(Boolean)
-    if (requestChangesReviewers.length > 0) {
+    // Re-request review from everyone who reviewed — includes Copilot if it reviewed
+    const reviewers = (status.reviewed_by || []).filter(Boolean)
+    if (reviewers.length > 0) {
       await agent(
-        `Re-request review on PR #${prNum} in ${repo} from: ${requestChangesReviewers.join(', ')}
-  gh pr edit ${prNum} --repo ${repo} --add-reviewer "${requestChangesReviewers.join(',')}" 2>/dev/null || true`,
+        `Re-request review on PR #${prNum} in ${repo} from all prior reviewers: ${reviewers.join(', ')}
+  gh pr edit ${prNum} --repo ${repo} --add-reviewer "${reviewers.join(',')}" 2>/dev/null || true`,
         { label: 're-request-review', phase: 'Fix', model: 'haiku' }
       )
-      log(`Re-requested review from: ${requestChangesReviewers.join(', ')}`)
+      log(`Re-requested review from: ${reviewers.join(', ')}`)
     }
 
-    // Always re-request Copilot review so it sees the updated code
-    await agent(
-      `Re-request Copilot review on PR #${prNum} in ${repo}:
-  gh pr edit ${prNum} --repo ${repo} --add-reviewer "Copilot" 2>/dev/null || true`,
-      { label: 'copilot-rereview', phase: 'Fix', model: 'haiku' }
-    )
-
-    log(`${passedComments.length}/${actionable.length} fix(es) pushed — review re-requested`)
+    log(`${passedComments.length}/${actionable.length} fix(es) pushed`)
   }
 }
 
