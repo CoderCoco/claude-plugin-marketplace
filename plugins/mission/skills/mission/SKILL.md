@@ -1,18 +1,18 @@
 ---
 name: mission
-description: Use when the user wants to start or advance the full end-to-end mission workflow for a GitHub issue. Trigger on "/mission <N>", "mission issue N", "continue mission", "/mission --status", or any signal that the user wants to orchestrate an issue through plan→build→review→PR. This is the top-level orchestrator — it runs the Flight Director interactively (asking the user any questions before committing), then hands a complete plan to the mission workflow.
+description: Use when the user wants to start or advance the full end-to-end mission workflow for a GitHub issue. Trigger on "/mission <N>", "mission issue N", "continue mission", "/mission --status", or any signal that the user wants to orchestrate an issue through plan→build→review→PR. This is the top-level orchestrator — it runs the Flight Director interactively (asking the user any questions before committing), then drives three focused workflows (Liftoff, Systems Check, Docking) with interactive pauses between phases where needed.
 ---
 
-# /mission — Interactive Planner + Workflow Dispatcher
+# /mission — Interactive Orchestrator
 
-Run the Flight Director in the current conversation (so open questions can be answered interactively), then invoke the mission workflow with a confirmed plan.
+Run the Flight Director in the current conversation so open questions can be answered interactively, then drive three focused workflows to completion. Each workflow does one job and returns — the skill owns all user interaction between phases.
 
 ## Step 1: Parse arguments
 
 Supported invocations:
 - `/mission 42` — start or resume
-- `/mission 42 --status` — show run ID and progress link
-- `/mission 42 --abandon` — clear saved run ID
+- `/mission 42 --status` — show phase run IDs and current position
+- `/mission 42 --abandon` — clear all saved state for this issue
 
 ```bash
 ISSUE_NUM="${ARG1:-}"
@@ -32,6 +32,9 @@ fi
 
 [ -n "$ISSUE_NUM" ] || { echo "Usage: /mission <issue_number> [--status|--abandon]"; exit 1; }
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+mkdir -p "${CLAUDE_PLUGIN_DATA}/mission-runs"
+STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}"
+mkdir -p "$STATE_DIR"
 ```
 
 ## Step 2: Handle --status
@@ -39,49 +42,34 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 If `$FLAG == "--status"`:
 
 ```bash
-RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
-if [ -f "$RUN_ID_FILE" ]; then
-  RUN_ID=$(cat "$RUN_ID_FILE")
-  echo "Mission #${ISSUE_NUM} — workflow run: ${RUN_ID}"
-  echo "To resume: /mission ${ISSUE_NUM}"
-  echo "View live progress with: /workflows"
-else
-  echo "No mission run found for issue #${ISSUE_NUM}. Run /mission ${ISSUE_NUM} to start."
-fi
-exit 0
+echo "Mission #${ISSUE_NUM} phases:"
+for phase in liftoff sc docking; do
+  FILE="$STATE_DIR/${phase}.runid"
+  [ -f "$FILE" ] && echo "  ${phase}: $(cat $FILE)" || echo "  ${phase}: not started"
+done
 ```
+Exit.
 
 ## Step 3: Handle --abandon
 
 If `$FLAG == "--abandon"`:
 
-Ask: "This will clear the saved run ID for issue #${ISSUE_NUM}. The workflow journal
-is preserved (you can still resume manually). Type `yes` to confirm."
+Ask: "This will clear all saved state for issue #${ISSUE_NUM}. Type `yes` to confirm."
 
 On `yes`:
 ```bash
-RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
-rm -f "$RUN_ID_FILE"
-echo "Mission run cleared for issue #${ISSUE_NUM}."
-exit 0
+rm -rf "$STATE_DIR"
+echo "Mission state cleared for issue #${ISSUE_NUM}."
 ```
+Exit.
 
-## Step 4: Look up prior run ID
-
-```bash
-mkdir -p "${CLAUDE_PLUGIN_DATA}/mission-runs"
-RUN_ID_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}.runid"
-PRIOR_RUN_ID=""
-[ -f "$RUN_ID_FILE" ] && PRIOR_RUN_ID=$(cat "$RUN_ID_FILE")
-```
-
-## Step 5: Run the Flight Director interactively
+## Step 4: Run the Flight Director interactively
 
 Use the **Agent tool** (not the Workflow tool) to call the Flight Director. This runs in the current conversation context so any open questions can be answered by the user immediately.
 
 Call the Agent tool with:
 - `subagent_type`: `"mission:flight-director"`
-- `prompt`: the Flight Director prompt below, substituting `ISSUE_NUM` and `REPO`
+- `prompt`: the Flight Director prompt below (substitute `ISSUE_NUM` and `REPO`)
 
 **Flight Director prompt template:**
 ```
@@ -140,70 +128,135 @@ Use this schema for the Agent tool call:
 
 If the Flight Director returns `open_questions` (non-empty array):
 
-1. Present the questions to the user. Use **AskUserQuestion** for up to 4 questions; for more, list them as a numbered message and ask for answers.
+1. Present the questions to the user. Use **AskUserQuestion** for up to 4 questions; for more, list them as a numbered message.
 2. Wait for the user's answers.
-3. Re-run the Flight Director Agent call, appending this to the prompt (replacing `<ANSWERS_CTX>`):
+3. Re-run the Flight Director Agent call, appending to the prompt (replacing `<ANSWERS_CTX>`):
    ```
    
    The user has answered your open questions:
-   <user's answers here>
+   <user's answers>
    Proceed with the full plan — do not return any open_questions.
    ```
 4. Repeat until the plan has no `open_questions`.
 
-Once the plan is clean, present a brief summary to the user:
+Once clean, show the user a brief summary:
 ```
 Flight plan ready — <N> tasks on <branch>:
   Alpha: <title>
   Bravo: <title>
   …
-Launching mission workflow…
 ```
 
-## Step 6: Invoke the mission workflow
-
-Read the workflow script and call the Workflow tool with the confirmed plan.
-Using `script:` (not `scriptPath:`) is required for `args` to be passed correctly.
+## Step 5: Liftoff workflow
 
 ```bash
-WORKFLOW_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/mission-workflow.js")
+LIFTOFF_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/liftoff-workflow.js")
+PRIOR_LIFTOFF=$(cat "$STATE_DIR/liftoff.runid" 2>/dev/null || echo "")
 ```
 
 ```
 Workflow({
-  script: "<WORKFLOW_SCRIPT>",
-  resumeFromRunId: <PRIOR_RUN_ID if non-empty, otherwise omit>,
-  args: {
-    issue_number: <ISSUE_NUM as integer>,
-    repo: "<REPO>",
-    plan: <the plan object returned by the Flight Director>
-  }
+  script: "<LIFTOFF_SCRIPT>",
+  resumeFromRunId: <PRIOR_LIFTOFF if non-empty, otherwise omit>,
+  args: { issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }
 })
 ```
 
-This call returns a `runId` (e.g. `wf_abc123`) in the tool result alongside the
-workflow output. Save it immediately for future resume:
+Save the returned `runId`:
+```bash
+echo "<runId>" > "$STATE_DIR/liftoff.runid"
+```
+
+## Step 6: Systems Check workflow — with interactive pause on exhaustion
+
+Run the Systems Check workflow and handle the result interactively. Repeat until the user is satisfied or the check comes back clean.
+
+Initialize before the loop:
+- `SC_DEFERRED = []` — accumulates low-confidence findings across SC runs
+- `SC_MAX_ROUNDS = 3`
 
 ```bash
-echo "<runId>" > "$RUN_ID_FILE"
+SC_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/systems-check-workflow.js")
 ```
 
-## Step 7: Report completion
+**Loop:**
 
-If the workflow returns successfully, print:
+1. Invoke the Systems Check workflow:
+   ```
+   Workflow({
+     script: "<SC_SCRIPT>",
+     resumeFromRunId: <prior SC runId if exists, otherwise omit>,
+     args: {
+       issue_number: <ISSUE_NUM>,
+       repo: "<REPO>",
+       plan: <plan object>,
+       initial_deferred: <SC_DEFERRED>,
+       max_rounds: <SC_MAX_ROUNDS>
+     }
+   })
+   ```
+   Save the returned `runId`:
+   ```bash
+   echo "<runId>" > "$STATE_DIR/sc.runid"
+   ```
+   Clear the prior SC runId after use (next iteration needs a fresh run):
+   ```bash
+   rm -f "$STATE_DIR/sc.runid"
+   ```
 
+2. If `result.status === 'clean'`: break out of the loop.
+
+3. If `result.status === 'exhausted'`:
+   - Format a summary of `result.open_findings`:
+     ```
+     [<severity>] <file>:<line> — <summary> (<confidence>% confident)
+     ```
+   - Use **AskUserQuestion** to ask the user what to do:
+     - **"Try more rounds"** — attempt additional repair rounds
+     - **"Skip and open PR"** — accept the open findings and proceed to Docking
+     - **"Stop"** — abandon the mission without opening a PR
+
+   - If **Try more rounds**: ask how many additional rounds (default 3). Set `SC_MAX_ROUNDS = <answer>`. Append `result.low_confidence_findings` into `SC_DEFERRED` (dedup by file+summary). Loop back to step 1 with a fresh SC invocation.
+   - If **Skip and open PR**: break out of the loop. Note to the user that the open findings will need manual attention after the PR is opened.
+   - If **Stop**: report the open findings and exit without opening a PR.
+
+After the loop, collect all deferred low-confidence findings from the final SC result.
+
+## Step 7: Docking workflow
+
+```bash
+DOCKING_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/docking-workflow.js")
+PRIOR_DOCKING=$(cat "$STATE_DIR/docking.runid" 2>/dev/null || echo "")
+```
+
+```
+Workflow({
+  script: "<DOCKING_SCRIPT>",
+  resumeFromRunId: <PRIOR_DOCKING if non-empty, otherwise omit>,
+  args: { issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }
+})
+```
+
+Save the returned `runId`:
+```bash
+echo "<runId>" > "$STATE_DIR/docking.runid"
+```
+
+## Step 8: Report completion
+
+Print:
 ```
 Mission complete!
-  Issue: #<issue_number>
-  PR: #<pr_number> — <pr_url>
+  Issue:  #<issue_number>
+  Branch: <branch>
+  PR:     #<pr_number> — <pr_url>
 
 Run /comms <issue_number> when PR reviews arrive.
 ```
 
-Then check `low_confidence_findings` in the result. If it is non-empty, list them for the user:
-
+If there are low-confidence findings that were deferred, list them:
 ```
-⚠ Low-confidence findings not auto-fixed (<N> total) — review manually:
+Low-confidence findings not auto-fixed (<N> total) — review manually:
 
   [<severity>] <file>:<line> — <summary> (<confidence>% confident)
   …
@@ -211,5 +264,10 @@ Then check `low_confidence_findings` in the result. If it is non-empty, list the
 These were skipped because the inspector was ≤50% confident they are real issues.
 ```
 
-If the workflow throws an error, the error message explains what failed. The run ID
-is already saved — re-run `/mission <N>` to resume from where it stopped.
+If any open findings were skipped by user choice, list those separately:
+```
+Open findings skipped at your request — address manually or in a follow-up PR:
+
+  [<severity>] <file>:<line> — <summary> (<confidence>% confident)
+  …
+```
