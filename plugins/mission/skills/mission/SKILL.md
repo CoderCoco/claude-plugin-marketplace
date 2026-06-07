@@ -200,5 +200,16 @@ Mission complete!
 Run /comms <issue_number> when PR reviews arrive.
 ```
 
+Then check `low_confidence_findings` in the result. If it is non-empty, list them for the user:
+
+```
+⚠ Low-confidence findings not auto-fixed (<N> total) — review manually:
+
+  [<severity>] <file>:<line> — <summary> (<confidence>% confident)
+  …
+
+These were skipped because the inspector was ≤50% confident they are real issues.
+```
+
 If the workflow throws an error, the error message explains what failed. The run ID
 is already saved — re-run `/mission <N>` to resume from where it stopped.

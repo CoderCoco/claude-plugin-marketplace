@@ -40,11 +40,12 @@ const FINDINGS_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['file', 'severity', 'summary'],
+        required: ['file', 'severity', 'confidence', 'summary'],
         properties: {
           file:       { type: 'string' },
           line:       { type: 'number' },
           severity:   { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+          confidence: { type: 'integer', minimum: 0, maximum: 100, description: 'How confident you are this is a real issue, 0–100. Be honest — uncertain findings should score low.' },
           summary:    { type: 'string' },
           suggestion: { type: 'string' },
         },
@@ -339,8 +340,17 @@ log(`Active buckets: ${[...activeBucketNames].join(', ') || 'none'} | Specialist
 const SC_ATTEMPT_CAP = 3
 let scAttempts = 0 // counts completed repair rounds; inspections = scAttempts + 1
 
+// Findings deferred across rounds because confidence ≤ 50%. Accumulated (deduped)
+// and fed back to inspectors so they don't re-flag the same uncertain items.
+const deferredFindings = []
+const deferredKeys = new Set()
+
 while (true) {
   log(`Inspection round ${scAttempts + 1}${scAttempts > 0 ? ' (re-inspecting after repairs)' : ''}…`)
+
+  const deferredCtx = deferredFindings.length > 0
+    ? `\n\nPreviously deferred low-confidence findings — do NOT re-report these unless your confidence is now above 50%:\n${deferredFindings.map(f => `  [${f.file}${f.line ? `:${f.line}` : ''}] ${f.summary} (was ${f.confidence}% confident)`).join('\n')}`
+    : ''
 
   // ── Language inspectors + specialists (parallel) ───────────────────────────
 
@@ -356,7 +366,8 @@ Review the ${lang} changes in worktree ${plan.worktree_path}:
 
 Focus exclusively on ${lang} files (${extList}).${filesCtx}
 If no matching files were modified, return an empty findings array.
-Classify each finding: blocker | major | minor | nit`,
+Classify each finding: blocker | major | minor | nit
+For each finding, assign a confidence score (0–100): how certain are you this is a real issue? Be honest — uncertain or style-preference findings should score low.${deferredCtx}`,
       {
         label: `inspector:${lang}:r${scAttempts}`,
         phase: 'Systems Check',
@@ -368,7 +379,7 @@ Classify each finding: blocker | major | minor | nit`,
   })
 
   const specialistInspectors = specialistDefs.map(s => () =>
-    agent(s.prompt, {
+    agent(`${s.prompt}\n\nFor each finding, assign a confidence score (0–100). Be honest — uncertain findings should score low.${deferredCtx}`, {
       label: `specialist:${s.label}:r${scAttempts}`,
       phase: 'Systems Check',
       schema: FINDINGS_SCHEMA,
@@ -385,31 +396,43 @@ Classify each finding: blocker | major | minor | nit`,
     .filter((f, i, arr) => arr.findIndex(f2 => f2.file === f.file && f2.summary === f.summary) === i)
 
   const significant = allFindings.filter(f => ['blocker', 'major', 'minor'].includes(f.severity))
-  log(`Round ${scAttempts + 1}: ${significant.length} significant finding(s), ${allFindings.length - significant.length} nit(s)`)
+  const actionable  = significant.filter(f => (f.confidence ?? 100) > 50)
+  const newDeferred = significant.filter(f => (f.confidence ?? 100) <= 50)
+
+  // Accumulate newly deferred findings (dedup by file+summary)
+  for (const f of newDeferred) {
+    const key = `${f.file}::${f.summary}`
+    if (!deferredKeys.has(key)) {
+      deferredKeys.add(key)
+      deferredFindings.push(f)
+    }
+  }
+
+  log(`Round ${scAttempts + 1}: ${actionable.length} actionable, ${newDeferred.length} new deferred (≤50% confidence), ${allFindings.length - significant.length} nit(s)`)
 
   // ── Clean — advance to docking ─────────────────────────────────────────────
 
-  if (significant.length === 0) {
-    log('Systems check clean')
+  if (actionable.length === 0) {
+    log(`Systems check clean${deferredFindings.length > 0 ? ` (${deferredFindings.length} low-confidence finding(s) deferred to user)` : ''}`)
     break
   }
 
   // ── Attempt cap exhausted — surface and halt ───────────────────────────────
 
   if (scAttempts >= SC_ATTEMPT_CAP) {
-    const summary = significant
-      .map(f => `  [${f.severity}] ${f.file}${f.line ? `:${f.line}` : ''} — ${f.summary}`)
+    const summary = actionable
+      .map(f => `  [${f.severity}] ${f.file}${f.line ? `:${f.line}` : ''} — ${f.summary} (${f.confidence ?? '?'}% confident)`)
       .join('\n')
     throw new Error(
       `Systems check: ${SC_ATTEMPT_CAP} repair round(s) exhausted with findings still open:\n${summary}\n\nFix manually then re-run /mission ${issueNum}, or abandon with /mission ${issueNum} --abandon.`
     )
   }
 
-  // ── Repair Astronauts (parallel) ───────────────────────────────────────────
+  // ── Repair Astronauts (parallel — actionable findings only) ───────────────
 
-  log(`Dispatching ${significant.length} repair(s) (round ${scAttempts + 1} of ${SC_ATTEMPT_CAP})…`)
+  log(`Dispatching ${actionable.length} repair(s) (round ${scAttempts + 1} of ${SC_ATTEMPT_CAP})…`)
 
-  const repairs = await parallel(significant.map((finding, idx) => () =>
+  const repairs = await parallel(actionable.map((finding, idx) => () =>
     agent(
       `Fix this finding in worktree ${plan.worktree_path}:
 File: ${finding.file}${finding.line ? `, line ${finding.line}` : ''}
@@ -430,14 +453,14 @@ Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, f
 
   // ── Repair Flight Controllers (parallel) ───────────────────────────────────
 
-  // Intentionally not filtering repairs so indices stay aligned with significant[].
+  // Intentionally not filtering repairs so indices stay aligned with actionable[].
   const repairVerdicts = await parallel(
     repairs.map((repair, idx) => () =>
       repair
         ? agent(
             `You are the Flight Controller verifying a repair for mission issue #${issueNum}.
 
-Finding: ${JSON.stringify(significant[idx])}
+Finding: ${JSON.stringify(actionable[idx])}
 Crew report: ${JSON.stringify(repair)}
 Worktree: ${plan.worktree_path}
 
@@ -461,7 +484,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
     const verdict = repairVerdicts[idx]
     const repair = repairs[idx]
     if (!verdict || !repair || verdict.verdict !== 'PASS') continue
-    const finding = significant[idx]
+    const finding = actionable[idx]
     await agent(
       `Commit the repair for "${finding.summary.slice(0, 60)}" in worktree ${plan.worktree_path}.
 
@@ -472,7 +495,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
     repairsPassed++
   }
 
-  log(`Repairs: ${repairsPassed}/${significant.length} committed — re-inspecting`)
+  log(`Repairs: ${repairsPassed}/${actionable.length} committed — re-inspecting`)
   scAttempts++
 }
 
@@ -513,7 +536,8 @@ Return pr_number and pr_url.`,
 log(`Mission complete — PR #${pr.pr_number}: ${pr.pr_url}`)
 
 return {
-  issue_number: issueNum,
-  pr_number:    pr.pr_number,
-  pr_url:       pr.pr_url,
+  issue_number:            issueNum,
+  pr_number:               pr.pr_number,
+  pr_url:                  pr.pr_url,
+  low_confidence_findings: deferredFindings,
 }
