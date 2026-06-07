@@ -271,6 +271,7 @@ Return a crew report with task_name, status, files_modified, and a summary.`,
           phase: 'Liftoff',
           schema: CREW_REPORT_SCHEMA,
           agentType: 'mission:astronaut',
+          model: 'sonnet',
         }
       )
     }))
