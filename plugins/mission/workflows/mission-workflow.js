@@ -310,6 +310,7 @@ FAIL with specific, actionable fixes_needed otherwise.`,
             phase: 'Liftoff',
             schema: VERDICT_SCHEMA,
             agentType: 'mission:flight-controller',
+            model: 'sonnet',
           }
         )
       })
@@ -343,7 +344,7 @@ FAIL with specific, actionable fixes_needed otherwise.`,
   git -C ${plan.worktree_path} commit -m "feat: ${task.name} — ${task.title}\\n\\nRefs #${issueNum}"
 
 Return the commit SHA.`,
-          { label: `commit:${task.name}`, phase: 'Liftoff' }
+          { label: `commit:${task.name}`, phase: 'Liftoff', model: 'haiku' }
         )
         log(`${task.name}: PASSED on attempt ${taskState[task.name].attempts}`)
       } else {
@@ -436,6 +437,7 @@ Classify each finding: blocker | major | minor | nit`,
         phase: 'Systems Check',
         schema: FINDINGS_SCHEMA,
         agentType: 'mission:systems-inspector',
+        model: 'sonnet',
       }
     )
   })
@@ -446,6 +448,7 @@ Classify each finding: blocker | major | minor | nit`,
       phase: 'Systems Check',
       schema: FINDINGS_SCHEMA,
       agentType: 'mission:systems-inspector',
+      model: 'sonnet',
     })
   )
 
@@ -495,6 +498,7 @@ Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, f
         label: `repair:r${scAttempts}:${idx}`,
         phase: 'Systems Check',
         schema: CREW_REPORT_SCHEMA,
+        model: 'sonnet',
       }
     )
   ))
@@ -518,6 +522,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
               phase: 'Systems Check',
               schema: VERDICT_SCHEMA,
               agentType: 'mission:flight-controller',
+              model: 'sonnet',
             }
           )
         : Promise.resolve(null)
@@ -537,7 +542,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
 
   git -C ${plan.worktree_path} add ${repair.files_modified.join(' ')}
   git -C ${plan.worktree_path} commit -m "fix: ${finding.summary.slice(0, 72)}\\n\\nRefs #${issueNum}"`,
-      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Systems Check' }
+      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Systems Check', model: 'haiku' }
     )
     repairsPassed++
   }
@@ -576,6 +581,7 @@ Return pr_number and pr_url.`,
     label: 'Docking',
     phase: 'Docking',
     schema: PR_SCHEMA,
+    model: 'sonnet',
   }
 )
 
