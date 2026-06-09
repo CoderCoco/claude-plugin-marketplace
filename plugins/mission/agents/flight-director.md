@@ -2,7 +2,7 @@
 name: flight-director
 description: Use as the Flight Director in the mission crew. Produces a DAG implementation plan for a GitHub issue — explores the repo, lists discrete tasks each small enough for one Astronaut, assigns crew names, declares file dependencies, and states acceptance criteria. Invoke when Mission Control needs a fresh flight plan, when a revision is required after a constraint is discovered mid-mission, or whenever the user explicitly asks for planning before any code is written.
 tools: Read, Grep, Glob, Bash, WebFetch
-model: opus
+model: fable
 color: blue
 ---
 

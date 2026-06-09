@@ -150,17 +150,13 @@ Flight plan ready — <N> tasks on <branch>:
 ## Step 5: Liftoff workflow
 
 ```bash
-LIFTOFF_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/liftoff-workflow.js")
 PRIOR_LIFTOFF=$(cat "$STATE_DIR/liftoff.runid" 2>/dev/null || echo "")
 ```
 
-```
-Workflow({
-  script: "<LIFTOFF_SCRIPT>",
-  resumeFromRunId: <PRIOR_LIFTOFF if non-empty, otherwise omit>,
-  args: { issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }
-})
-```
+Call the Workflow tool with:
+- `scriptPath`: the literal string `${CLAUDE_PLUGIN_ROOT}/workflows/liftoff-workflow.js` (expand the env var — do NOT use import() or cat)
+- `resumeFromRunId`: value of `PRIOR_LIFTOFF` if non-empty, otherwise omit the field entirely
+- `args`: `{ issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }`
 
 Save the returned `runId`:
 ```bash
@@ -175,26 +171,12 @@ Initialize before the loop:
 - `SC_DEFERRED = []` — accumulates low-confidence findings across SC runs
 - `SC_MAX_ROUNDS = 3`
 
-```bash
-SC_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/systems-check-workflow.js")
-```
-
 **Loop:**
 
-1. Invoke the Systems Check workflow:
-   ```
-   Workflow({
-     script: "<SC_SCRIPT>",
-     resumeFromRunId: <prior SC runId if exists, otherwise omit>,
-     args: {
-       issue_number: <ISSUE_NUM>,
-       repo: "<REPO>",
-       plan: <plan object>,
-       initial_deferred: <SC_DEFERRED>,
-       max_rounds: <SC_MAX_ROUNDS>
-     }
-   })
-   ```
+1. Invoke the Systems Check workflow using the Workflow tool with:
+   - `scriptPath`: the literal string `${CLAUDE_PLUGIN_ROOT}/workflows/systems-check-workflow.js` (expand the env var — do NOT use import() or cat)
+   - `resumeFromRunId`: prior SC runId if it exists, otherwise omit
+   - `args`: `{ issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object>, initial_deferred: <SC_DEFERRED>, max_rounds: <SC_MAX_ROUNDS> }`
    Save the returned `runId`:
    ```bash
    echo "<runId>" > "$STATE_DIR/sc.runid"
@@ -225,17 +207,13 @@ After the loop, collect all deferred low-confidence findings from the final SC r
 ## Step 7: Docking workflow
 
 ```bash
-DOCKING_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/docking-workflow.js")
 PRIOR_DOCKING=$(cat "$STATE_DIR/docking.runid" 2>/dev/null || echo "")
 ```
 
-```
-Workflow({
-  script: "<DOCKING_SCRIPT>",
-  resumeFromRunId: <PRIOR_DOCKING if non-empty, otherwise omit>,
-  args: { issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }
-})
-```
+Call the Workflow tool with:
+- `scriptPath`: the literal string `${CLAUDE_PLUGIN_ROOT}/workflows/docking-workflow.js` (expand the env var — do NOT use import() or cat)
+- `resumeFromRunId`: value of `PRIOR_DOCKING` if non-empty, otherwise omit the field entirely
+- `args`: `{ issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan object> }`
 
 Save the returned `runId`:
 ```bash

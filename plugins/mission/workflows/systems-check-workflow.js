@@ -2,7 +2,9 @@ export const meta = {
   name: 'systems-check-workflow',
   description: 'Review the full diff with language-bucketed inspectors and repair actionable findings. Returns status so the skill can ask the user what to do if rounds are exhausted.',
   phases: [
-    { title: 'Systems Check', detail: 'Scout diff, spawn targeted inspectors, repair actionable findings' },
+    { title: 'Review', detail: 'Scout diff, spawn language inspectors and specialists' },
+    { title: 'Fix',    detail: 'Repair Astronauts address actionable findings; Flight Controllers verify' },
+    { title: 'Commit', detail: 'Commit PASSed repairs to the worktree' },
   ],
 }
 
@@ -103,8 +105,6 @@ const maxRounds      = typeof _a.max_rounds === 'number' ? _a.max_rounds : 3
 
 // ── Systems Check ──────────────────────────────────────────────────────────────
 
-phase('Systems Check')
-
 const LANGUAGE_BUCKET_EXTS = {
   javascript: ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'],
   python:     ['.py'],
@@ -113,6 +113,7 @@ const LANGUAGE_BUCKET_EXTS = {
   shell:      ['.sh', '.bash', '.zsh'],
 }
 
+phase('Review')
 log('Scouting diff…')
 const scout = await agent(
   `You are a triage agent for mission issue #${issueNum}. Read the full diff and decide what inspection is needed.
@@ -138,7 +139,7 @@ const scout = await agent(
    For each specialist, write a full, targeted inspection prompt (include the worktree path ${plan.worktree_path} and issue number #${issueNum}).
 
 Return active_buckets, focus_areas, and specialist_agents (omit specialist_agents or leave it empty if none are needed).`,
-  { label: 'scout', phase: 'Systems Check', schema: SCOUT_SCHEMA, model: 'haiku' }
+  { label: 'scout', phase: 'Review', schema: SCOUT_SCHEMA, model: 'haiku' }
 )
 
 const activeBucketNames = new Set(scout ? scout.active_buckets : [])
@@ -155,6 +156,7 @@ const deferredKeys = new Set(seedDeferred.map(f => `${f.file}::${f.summary}`))
 let scAttempts = 0
 
 while (true) {
+  phase('Review')
   log(`Inspection round ${scAttempts + 1}${scAttempts > 0 ? ' (re-inspecting after repairs)' : ''}…`)
 
   const deferredCtx = deferredFindings.length > 0
@@ -179,7 +181,7 @@ Classify each finding: blocker | major | minor | nit
 For each finding, assign a confidence score (0–100): how certain are you this is a real issue? Be honest — uncertain or style-preference findings should score low.${deferredCtx}`,
       {
         label: `inspector:${lang}:r${scAttempts}`,
-        phase: 'Systems Check',
+        phase: 'Review',
         schema: FINDINGS_SCHEMA,
         agentType: 'mission:systems-inspector',
         model: 'sonnet',
@@ -234,6 +236,7 @@ For each finding, assign a confidence score (0–100): how certain are you this 
 
   // ── Repair Astronauts (parallel — actionable findings only) ───────────────
 
+  phase('Fix')
   log(`Dispatching ${actionable.length} repair(s) (round ${scAttempts + 1} of ${maxRounds})…`)
 
   const repairs = await parallel(actionable.map((finding, idx) => () =>
@@ -248,7 +251,7 @@ Do NOT commit — the Flight Controller will verify.
 Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, files_modified, and summary.`,
       {
         label: `repair:r${scAttempts}:${idx}`,
-        phase: 'Systems Check',
+        phase: 'Fix',
         schema: CREW_REPORT_SCHEMA,
         model: 'sonnet',
       }
@@ -271,7 +274,7 @@ Worktree: ${plan.worktree_path}
 Run checks as appropriate. PASS only if the finding is resolved and all checks pass. FAIL with fixes_needed otherwise.`,
             {
               label: `fc-repair:r${scAttempts}:${idx}`,
-              phase: 'Systems Check',
+              phase: 'Fix',
               schema: VERDICT_SCHEMA,
               agentType: 'mission:flight-controller',
               model: 'sonnet',
@@ -283,6 +286,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
 
   // ── Commit PASSed repairs (sequential) ────────────────────────────────────
 
+  phase('Commit')
   let repairsPassed = 0
   for (let idx = 0; idx < repairs.length; idx++) {
     const verdict = repairVerdicts[idx]
@@ -294,7 +298,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
 
   git -C ${plan.worktree_path} add ${repair.files_modified.join(' ')}
   git -C ${plan.worktree_path} commit -m "fix: ${finding.summary.slice(0, 72)}\\n\\nRefs #${issueNum}"`,
-      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Systems Check', model: 'haiku' }
+      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Commit', model: 'haiku' }
     )
     repairsPassed++
   }

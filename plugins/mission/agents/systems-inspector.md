@@ -2,7 +2,7 @@
 name: systems-inspector
 description: Use as the Systems Inspector in the mission crew. Reviews the diff for a specific language bucket against the living review rubric, surfacing semantic and quality issues the Flight Controller's mechanical checks cannot catch. Invoke in parallel — one Systems Inspector per language bucket — after liftoff completes and before docking.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: fable
 color: green
 ---
 
