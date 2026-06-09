@@ -89,7 +89,11 @@ Steps:
 4. Create a worktree (idempotent):
      WORKTREE="$REPO_ROOT/.claude/worktrees/issue-<ISSUE_NUM>-$SLUG"
      [ -d "$WORKTREE" ] || git worktree add "$WORKTREE" "$BRANCH"
-5. Break the issue into ordered, file-scoped tasks. Assign NATO phonetic names (Alpha, Bravo…).
+5. Break the issue into ordered, file-scoped tasks. Assign crew names from the 52-name roster in
+   references/crew-roster.md (Apollo, Borman, Cassini…), starting at index 0.
+   List tasks in execution order — first every task with depends_on: [], then tasks whose
+   dependencies all appear earlier in the list — and assign roster names in that listed order,
+   so tasks that launch in parallel hold consecutive names.
    Express dependencies by name in depends_on. Each task needs a one-sentence acceptance criterion.
    If anything is ambiguous, list it in open_questions instead of guessing.<ANSWERS_CTX>
 
@@ -142,8 +146,8 @@ If the Flight Director returns `open_questions` (non-empty array):
 Once clean, show the user a brief summary:
 ```
 Flight plan ready — <N> tasks on <branch>:
-  Alpha: <title>
-  Bravo: <title>
+  Apollo: <title>
+  Borman: <title>
   …
 ```
 

@@ -2,7 +2,9 @@ export const meta = {
   name: 'liftoff-workflow',
   description: 'Implement all planned tasks for a GitHub issue — Astronauts build, Flight Controllers verify, commits land in the worktree',
   phases: [
-    { title: 'Liftoff', detail: 'Astronauts implement tasks; FC verifies each round' },
+    { title: 'Build',  detail: 'Astronauts implement tasks in dependency rounds' },
+    { title: 'Verify', detail: 'Flight Controllers run tests/lint/build per task' },
+    { title: 'Commit', detail: 'Commit PASSed tasks to the worktree' },
   ],
 }
 
@@ -76,8 +78,6 @@ plan.tasks.forEach(t => log(`  ${t.name}: ${t.title} [${t.files.join(', ')}]`))
 
 // ── Liftoff ────────────────────────────────────────────────────────────────────
 
-phase('Liftoff')
-
 const TASK_ATTEMPT_CAP = 3
 const rounds = computeRounds(plan.tasks)
 log(`${plan.tasks.length} tasks across ${rounds.length} round(s)`)
@@ -102,6 +102,7 @@ for (let r = 0; r < rounds.length; r++) {
 
     // ── Astronauts (parallel) ──────────────────────────────────────────────────
 
+    phase('Build')
     const crewReports = await parallel(pendingTasks.map(task => () => {
       const s = taskState[task.name]
       const retryCtx = s.fixes.length > 0
@@ -122,7 +123,7 @@ Do NOT run git add or git commit — the Flight Controller handles that.${retryC
 Return a crew report with task_name, status, files_modified, and a summary.`,
         {
           label: `Astronaut:${task.name}:${s.attempts + 1}`,
-          phase: 'Liftoff',
+          phase: 'Build',
           schema: CREW_REPORT_SCHEMA,
           agentType: 'mission:astronaut',
           model: 'sonnet',
@@ -142,6 +143,7 @@ Return a crew report with task_name, status, files_modified, and a summary.`,
 
     // ── Flight Controllers (parallel) ──────────────────────────────────────────
 
+    phase('Verify')
     const verdicts = await parallel(
       pendingTasks.map(task => () => {
         const report = reportsByName[task.name]
@@ -160,7 +162,7 @@ PASS only if the implementation satisfies the acceptance criterion and all check
 FAIL with specific, actionable fixes_needed otherwise.`,
           {
             label: `FC:${task.name}:${attempt}`,
-            phase: 'Liftoff',
+            phase: 'Verify',
             schema: VERDICT_SCHEMA,
             agentType: 'mission:flight-controller',
             model: 'sonnet',
@@ -174,6 +176,7 @@ FAIL with specific, actionable fixes_needed otherwise.`,
 
     // ── Commit PASSed / queue FAILed (sequential to avoid git lock race) ───────
 
+    phase('Commit')
     const nextPending = []
     for (const task of pendingTasks) {
       const verdict = verdictsByName[task.name]
@@ -196,7 +199,7 @@ FAIL with specific, actionable fixes_needed otherwise.`,
   git -C ${plan.worktree_path} commit -m "feat: ${task.name} — ${task.title}\\n\\nRefs #${issueNum}"
 
 Return the commit SHA.`,
-          { label: `commit:${task.name}`, phase: 'Liftoff', model: 'haiku' }
+          { label: `commit:${task.name}`, phase: 'Commit', model: 'haiku' }
         )
         log(`${task.name}: PASSED on attempt ${taskState[task.name].attempts}`)
       } else {

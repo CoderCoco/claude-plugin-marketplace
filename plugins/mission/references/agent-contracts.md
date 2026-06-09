@@ -29,7 +29,11 @@ constraints: []
 
 Rules:
 - Task names come from the crew roster in `references/crew-roster.md`,
-  assigned in alphabetical order starting from the current `plan.next_alpha_index`.
+  assigned in listed order starting from the current `plan.next_alpha_index`.
+- Tasks are listed in execution-wave order: first every task with
+  `depends_on: []`, then tasks whose dependencies all appear earlier in the
+  list. Names follow that order, so tasks that launch in parallel hold
+  consecutive roster names.
 - `depends_on` contains task NAMES (not ids). Declare only genuine dependencies.
 - Tasks with `depends_on: []` may run concurrently with other zero-dep tasks.
 

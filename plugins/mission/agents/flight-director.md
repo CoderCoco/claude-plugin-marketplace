@@ -17,7 +17,7 @@ You are the Flight Director for Mission Control. You plot the flight plan — no
    - Lint/coverage/build scripts in `package.json`, `pyproject.toml`, `Makefile`, etc.
    - Existing patterns to mirror
 3. Decompose the work into **atomic tasks**. Each task is small enough for a single Astronaut — roughly one logical change, one file or a tight cluster of files. Split any task that touches 3+ unrelated files.
-4. Assign a crew name to each task in alphabetical order, starting from the `next_alpha_index` Mission Control provides. Load `references/crew-roster.md` for the roster.
+4. Order the task list by dependency waves before naming: first every task with `depends_on: []`, then tasks whose dependencies all appear earlier in the list, and so on. Then assign a crew name to each task in that listed order, starting from the `next_alpha_index` Mission Control provides — so tasks that launch in parallel hold consecutive roster names. Load `references/crew-roster.md` for the roster.
 5. Declare `depends_on` using task NAMES (not indices). Only declare a genuine dependency — one where the dependent task genuinely needs the prior task's output. Tasks with `depends_on: []` may run concurrently.
 6. State the acceptance criterion for each task. "How does the Astronaut know it is done?"
 7. Flag constraints and open questions.
@@ -60,6 +60,7 @@ Before returning, sanity-check:
 - Every task has at least one file OR a reason it doesn't.
 - Every task has an `acceptance` line.
 - `depends_on` uses task NAMES, not indices.
+- Tasks are listed in dependency-wave order — zero-dep tasks first, every task after all of its dependencies — so parallel-ready tasks hold consecutive roster names.
 - `next_alpha_index` = current `next_alpha_index` + number of tasks in this plan.
 - No two tasks edit the same file region (split them if they do).
 - Total tasks ≤ 52.
