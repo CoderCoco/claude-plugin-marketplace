@@ -19,7 +19,7 @@
     },
     {
       "name": "mission",
-      "description": "End-to-end GitHub issue orchestrator — plan, build, review, open PR, handle comments. Resumable state machine. Space / mission control themed.",
+      "description": "End-to-end GitHub issue orchestrator — plan, build, review, open PR, handle comments. Resumable workflow pipeline. Space / mission control themed.",
       "author": { "name": "CoderCoco" },
       "source": "./plugins/mission",
       "license": "MIT"

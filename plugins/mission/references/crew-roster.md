@@ -34,9 +34,10 @@ Space-flavor the narration; never the payload.
 
 ## Task name roster (52 names, A–Z twice)
 
-Tasks created during a mission are named from this roster in order, starting
-from `plan.next_alpha_index`. Systems-check repair tasks and comms repair tasks
-continue from where liftoff left off.
+Tasks are named from this roster in execution order. The Flight Director assigns
+all roster names at planning time, in dependency-wave order, starting from
+index 0 (or the index Mission Control provides for a re-plan). Repair tasks
+created during systems-check or comms are not roster-named.
 
 If a plan would require more than 52 tasks, halt and ask the Flight Director to
 decompose further rather than wrapping to a third pass.

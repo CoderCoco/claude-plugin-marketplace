@@ -56,6 +56,8 @@ Initialize: `SC_DEFERRED = []` (accumulates low-confidence findings), `SC_MAX_RO
    rm -f "$STATE_DIR/sc.runid"                 # after the run returns
    ```
 
+   If the workflow throws, present the error using the banner shape in references/halt-protocol.md — options: [1] fix the stated problem and re-run /systems-check <N>, [2] /pre-launch <N> --replan if the plan itself is wrong.
+
 2. If `result.status === 'clean'`: break.
 
 3. If `result.status === 'exhausted'`:

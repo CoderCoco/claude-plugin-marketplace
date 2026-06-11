@@ -29,12 +29,15 @@ if [ -z "$ISSUE_NUM" ]; then
   ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
 fi
 
-[ -n "$ISSUE_NUM" ] || { echo "Usage: /comms <issue_number> [--status|--abandon]"; exit 1; }
+[ -n "$ISSUE_NUM" ] || { echo "Usage: /comms <issue_number> [--status|--abandon] [--models …]"; exit 1; }
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 REPO_ROOT=$(git rev-parse --show-toplevel)
 STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}"
 mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/comms-state.json"
+# Migrate pre-0.7.0 state location
+OLD_STATE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}-comms-state.json"
+[ -f "$OLD_STATE" ] && [ ! -f "$STATE_FILE" ] && mv "$OLD_STATE" "$STATE_FILE"
 ```
 
 ## Step 1b: Resolve models

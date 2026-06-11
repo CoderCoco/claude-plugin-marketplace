@@ -77,6 +77,6 @@ models:
 
 ## Architecture
 
-`/mission` orchestrates four phase skills; each wraps one workflow script in
+`/mission` orchestrates four phase skills — pre-launch runs the Flight Director in-conversation; the other three each wrap one workflow script in
 `workflows/`. State lives in `$CLAUDE_PLUGIN_DATA/mission-runs/issue-<N>/`
 (`plan.json`, workflow runIds, comms state). Never committed.

@@ -25,5 +25,7 @@ Rules:
 - Number options so the user can reply with "1" without paraphrasing.
 - Do NOT proceed after printing this. Exit the skill and wait for the next
   `/mission <N>` invocation.
-- When the user responds, resume by updating state appropriately
-  (e.g., `phase_status=pending` to retry, or `task.status=skipped` to skip a task) before re-running.
+- When the user responds, resume by re-running the appropriate phase skill or
+  `/mission <N>` — the workflow resumes from the saved runId in
+  `$CLAUDE_PLUGIN_DATA/mission-runs/issue-<N>/`. If the plan itself is wrong,
+  fix it with `/pre-launch <N> --replan`.

@@ -43,6 +43,8 @@ Worktree: ${plan.worktree_path}
 Issue title: ${plan.issue_title}
 
 Steps:
+0a. Verify the worktree is clean: git -C ${plan.worktree_path} status --porcelain — if any TRACKED files show changes, STOP and report the dirty state instead of pushing.
+0b. Check for an existing PR: gh pr list --repo ${repo} --head ${plan.branch} --json number,url — if one exists, push the branch, skip creation, and return that PR's number and url.
 1. git -C ${plan.worktree_path} push -u origin ${plan.branch}
 2. Discover PR conventions: check .github/PULL_REQUEST_TEMPLATE.md, then skim 3 recent PRs via:
      gh pr list --repo ${repo} --limit 3 --json title,body --state merged

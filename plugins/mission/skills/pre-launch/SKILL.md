@@ -73,6 +73,7 @@ Steps:
 4. Create a worktree (idempotent):
      WORKTREE="$REPO_ROOT/.claude/worktrees/issue-<ISSUE_NUM>-$SLUG"
      [ -d "$WORKTREE" ] || git worktree add "$WORKTREE" "$BRANCH"
+     If the worktree already exists, verify it is on $BRANCH (git -C "$WORKTREE" branch --show-current); if it is on a different branch, STOP — report the conflict in open_questions instead of proceeding.
 5. Break the issue into ordered, file-scoped tasks. Assign crew names from the 52-name roster in
    references/crew-roster.md (Apollo, Borman, Cassini…), starting at index 0.
    List tasks in execution order — first every task with depends_on: [], then tasks whose
@@ -126,7 +127,23 @@ If the Flight Director returns a non-empty `open_questions`:
    ```
 4. Repeat until the plan has no open_questions.
 
-## Step 5: Persist the plan
+## Step 5: Present and confirm
+
+```
+Flight plan ready for issue #<N> — <count> task(s) on <branch>:
+
+  Name          Title                                    Files
+  ──────────────────────────────────────────────────────────────
+  Apollo        <title>                                  src/retry.ts
+  Borman        <title>                                  src/webhook.ts  [->Apollo]
+
+Ready for liftoff? [Y/n]
+```
+
+- Feedback / `n` → re-dispatch the Flight Director (Step 4) with the user's feedback appended as revision instructions, then re-confirm (Step 5) — do NOT write plan.json until the user confirms.
+- `y` → proceed to Step 6.
+
+## Step 6: Persist the plan
 
 Write `$STATE_DIR/plan.json` (Write tool; resolve `$STATE_DIR` to its absolute path first):
 
@@ -142,18 +159,4 @@ Write `$STATE_DIR/plan.json` (Write tool; resolve `$STATE_DIR` to its absolute p
 }
 ```
 
-## Step 6: Present and confirm
-
-```
-Flight plan ready for issue #<N> — <count> task(s) on <branch>:
-
-  Name          Title                                    Files
-  ──────────────────────────────────────────────────────────────
-  Apollo        <title>                                  src/retry.ts
-  Borman        <title>                                  src/webhook.ts  [->Apollo]
-
-Ready for liftoff? [Y/n]
-```
-
-- Feedback / `n` → re-dispatch the Flight Director (Step 4) with the user's feedback appended as revision instructions, then rewrite `plan.json` (Step 5) and re-confirm.
-- `y` → print: `All systems go — /mission <N> continues automatically, or run /liftoff <N> yourself.` and finish. Do NOT invoke other skills — the orchestrator (or the user) drives the next phase.
+Then print: `All systems go — /mission <N> continues automatically, or run /liftoff <N> yourself.` and finish. Do NOT invoke other skills — the orchestrator (or the user) drives the next phase.

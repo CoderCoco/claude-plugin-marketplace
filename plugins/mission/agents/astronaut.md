@@ -35,4 +35,4 @@ Mission Control supplies a structured-output schema with your dispatch. Return y
 Before returning, sanity-check:
 - Every file you actually edited appears in `files_modified`.
 - `summary` describes what changed, not just the filename.
-- Any assumption you made is in `notes`.
+- State any assumptions you made in your summary.
