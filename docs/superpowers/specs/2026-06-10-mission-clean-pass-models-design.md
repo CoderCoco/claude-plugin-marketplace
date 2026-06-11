@@ -68,7 +68,7 @@ essentials and the file path carries the rest (agents can Read it).
   conversation** (via the Agent tool) rather than dispatching the /pre-launch
   skill.
 - Document the new model-selection feature (flag syntax, settings file, roles,
-  defaults).
+  defaults) and the `/mission:setup` interactive walkthrough.
 
 ## Part 2 — Per-invocation model selection
 
@@ -130,6 +130,26 @@ Skills read it if present; absence is not an error.
    are self-contained and cannot import.)
 5. Agent frontmatter (`agents/*.md`) keeps its current `model:` values as the
    fallback for any invocation outside these workflows.
+
+### Setup skill
+
+New skill `skills/setup/SKILL.md` (invoked as `/mission:setup`, triggers:
+"mission setup", "configure mission models") that creates or updates the
+settings file interactively:
+
+1. If `.claude/mission.local.md` exists, read it and present current values
+   (setup doubles as reconfigure).
+2. Ask model choices via AskUserQuestion: one question for `director`, one for
+   `inspector`, one grouped for `astronaut`/`controller`/`capcom`, one for
+   `utility`. Options haiku/sonnet/opus/fable, current effective value marked.
+3. Write `.claude/mission.local.md` with YAML frontmatter plus a short body
+   documenting the roles and valid values. Only roles that differ from the
+   built-in defaults are written, keeping the file minimal.
+4. If `.gitignore` does not cover the file, offer to add `.claude/*.local.md`.
+
+The file's frontmatter is structured to allow future settings beyond `models`
+(e.g., attempt caps) without format changes, but setup only handles models for
+now.
 
 ### State
 
