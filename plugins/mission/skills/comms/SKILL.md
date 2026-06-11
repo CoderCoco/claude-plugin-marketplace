@@ -13,6 +13,7 @@ Supported invocations:
 - `/comms 42` — process new comments (one pass)
 - `/comms 42 --status` — show last-seen timestamp
 - `/comms 42 --abandon` — clear saved state
+- `/comms 42 --models capcom=opus` — model overrides for this run
 
 ```bash
 ISSUE_NUM="${ARG1:-}"
@@ -31,9 +32,20 @@ fi
 [ -n "$ISSUE_NUM" ] || { echo "Usage: /comms <issue_number> [--status|--abandon]"; exit 1; }
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 REPO_ROOT=$(git rev-parse --show-toplevel)
-mkdir -p "${CLAUDE_PLUGIN_DATA}/mission-runs"
-STATE_FILE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}-comms-state.json"
+STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}"
+mkdir -p "$STATE_DIR"
+STATE_FILE="$STATE_DIR/comms-state.json"
 ```
+
+## Step 1b: Resolve models
+
+Built-in defaults: `director=fable`, `astronaut=sonnet`, `controller=sonnet`, `inspector=fable`, `capcom=sonnet`, `docking=sonnet`, `utility=haiku`.
+
+1. If `.claude/mission.local.md` exists at the repo root, Read it and take any entries under `models:` in its YAML frontmatter.
+2. If the invocation included `--models role=value,...`, apply those entries on top.
+3. Valid roles: `director`, `astronaut`, `controller`, `inspector`, `capcom`, `docking`, `utility`. Valid values: `haiku`, `sonnet`, `opus`, `fable`. Warn about and ignore any invalid entry — never abort over one.
+
+The merged result is `MODELS`, passed to the workflow as `args.models`.
 
 ## Step 2: Discover branch, worktree, and PR
 
@@ -99,23 +111,18 @@ LAST_SEEN_AT="1970-01-01T00:00:00Z"
 
 The comms workflow processes all new comments in one pass and returns immediately — no sleeping, no looping.
 
-```bash
-WORKFLOW_SCRIPT=$(cat "${CLAUDE_PLUGIN_ROOT}/workflows/comms-workflow.js")
-```
-
-```
-Workflow({
-  script: "<WORKFLOW_SCRIPT>",
-  args: {
+Call the Workflow tool with:
+- `scriptPath`: the literal string `${CLAUDE_PLUGIN_ROOT}/workflows/comms-workflow.js` (expand the env var — do NOT use import() or cat)
+- `args`: {
     issue_number:  <ISSUE_NUM as integer>,
     repo:          "<REPO>",
     pr_number:     <PR_NUM as integer>,
     branch:        "<BRANCH>",
     worktree_path: "<WORKTREE_PATH>",
-    last_seen_at:  "<LAST_SEEN_AT>"
+    last_seen_at:  "<LAST_SEEN_AT>",
+    models:        <MODELS>,
+    plugin_root:   "<value of $CLAUDE_PLUGIN_ROOT>"
   }
-})
-```
 
 **Do not pass `resumeFromRunId`** — each comms run is a fresh single-pass invocation.
 
@@ -129,7 +136,7 @@ echo "{\"last_seen_at\":\"<result.last_seen_at>\"}" > "$STATE_FILE"
 **If `result.status` is `'merged'`:**
 ```
 PR #<pr_number> merged — mission complete!
-Run /mission <N> --finish to clean up the worktree.
+Clean up when ready:  git worktree remove <worktree_path>
 ```
 
 **If `result.status` is `'resolved'`:**
