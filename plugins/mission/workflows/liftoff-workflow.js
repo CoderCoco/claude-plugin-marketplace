@@ -73,6 +73,10 @@ const repo     = _a.repo
 const plan     = _a.plan
 if (!issueNum || !repo || !plan) throw new Error('args must include issue_number, repo, and plan')
 
+const MODEL_DEFAULTS = { astronaut: 'sonnet', controller: 'sonnet', inspector: 'fable', capcom: 'sonnet', docking: 'sonnet', utility: 'haiku' }
+const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})
+const pluginRoot = _a.plugin_root || ''
+
 log(`${plan.tasks.length} tasks on ${plan.branch}:`)
 plan.tasks.forEach(t => log(`  ${t.name}: ${t.title} [${t.files.join(', ')}]`))
 
@@ -126,7 +130,7 @@ Return a crew report with task_name, status, files_modified, and a summary.`,
           phase: 'Build',
           schema: CREW_REPORT_SCHEMA,
           agentType: 'mission:astronaut',
-          model: 'sonnet',
+          model: M.astronaut,
         }
       )
     }))
@@ -165,7 +169,7 @@ FAIL with specific, actionable fixes_needed otherwise.`,
             phase: 'Verify',
             schema: VERDICT_SCHEMA,
             agentType: 'mission:flight-controller',
-            model: 'sonnet',
+            model: M.controller,
           }
         )
       })
@@ -198,8 +202,9 @@ FAIL with specific, actionable fixes_needed otherwise.`,
   git -C ${plan.worktree_path} add ${task.files.join(' ')}
   git -C ${plan.worktree_path} commit -m "feat: ${task.name} — ${task.title}\\n\\nRefs #${issueNum}"
 
+The message must follow Conventional Commits (imperative subject, ≤72 chars).${pluginRoot ? `\nFull rules: read ${pluginRoot}/references/conventional-commits.md` : ''}
 Return the commit SHA.`,
-          { label: `commit:${task.name}`, phase: 'Commit', model: 'haiku' }
+          { label: `commit:${task.name}`, phase: 'Commit', model: M.utility }
         )
         log(`${task.name}: PASSED on attempt ${taskState[task.name].attempts}`)
       } else {
