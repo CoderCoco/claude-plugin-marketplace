@@ -103,6 +103,10 @@ if (!issueNum || !repo || !plan) throw new Error('args must include issue_number
 const seedDeferred   = Array.isArray(_a.initial_deferred) ? _a.initial_deferred : []
 const maxRounds      = typeof _a.max_rounds === 'number' ? _a.max_rounds : 3
 
+const MODEL_DEFAULTS = { astronaut: 'sonnet', controller: 'sonnet', inspector: 'fable', capcom: 'sonnet', docking: 'sonnet', utility: 'haiku' }
+const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})
+const pluginRoot = _a.plugin_root || ''
+
 // ── Systems Check ──────────────────────────────────────────────────────────────
 
 const LANGUAGE_BUCKET_EXTS = {
@@ -139,7 +143,7 @@ const scout = await agent(
    For each specialist, write a full, targeted inspection prompt (include the worktree path ${plan.worktree_path} and issue number #${issueNum}).
 
 Return active_buckets, focus_areas, and specialist_agents (omit specialist_agents or leave it empty if none are needed).`,
-  { label: 'scout', phase: 'Review', schema: SCOUT_SCHEMA, model: 'haiku' }
+  { label: 'scout', phase: 'Review', schema: SCOUT_SCHEMA, model: M.utility }
 )
 
 const activeBucketNames = new Set(scout ? scout.active_buckets : [])
@@ -184,7 +188,7 @@ For each finding, assign a confidence score (0–100): how certain are you this 
         phase: 'Review',
         schema: FINDINGS_SCHEMA,
         agentType: 'mission:systems-inspector',
-        model: 'sonnet',
+        model: M.inspector,
       }
     )
   })
@@ -192,10 +196,10 @@ For each finding, assign a confidence score (0–100): how certain are you this 
   const specialistInspectors = specialistDefs.map(s => () =>
     agent(`${s.prompt}\n\nFor each finding, assign a confidence score (0–100). Be honest — uncertain findings should score low.${deferredCtx}`, {
       label: `specialist:${s.label}:r${scAttempts}`,
-      phase: 'Systems Check',
+      phase: 'Review',
       schema: FINDINGS_SCHEMA,
       agentType: 'mission:systems-inspector',
-      model: 'sonnet',
+      model: M.inspector,
     })
   )
 
@@ -253,7 +257,7 @@ Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, f
         label: `repair:r${scAttempts}:${idx}`,
         phase: 'Fix',
         schema: CREW_REPORT_SCHEMA,
-        model: 'sonnet',
+        model: M.astronaut,
       }
     )
   ))
@@ -277,7 +281,7 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
               phase: 'Fix',
               schema: VERDICT_SCHEMA,
               agentType: 'mission:flight-controller',
-              model: 'sonnet',
+              model: M.controller,
             }
           )
         : Promise.resolve(null)
@@ -297,8 +301,10 @@ Run checks as appropriate. PASS only if the finding is resolved and all checks p
       `Commit the repair for "${finding.summary.slice(0, 60)}" in worktree ${plan.worktree_path}.
 
   git -C ${plan.worktree_path} add ${repair.files_modified.join(' ')}
-  git -C ${plan.worktree_path} commit -m "fix: ${finding.summary.slice(0, 72)}\\n\\nRefs #${issueNum}"`,
-      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Commit', model: 'haiku' }
+  git -C ${plan.worktree_path} commit -m "fix: ${finding.summary.slice(0, 72)}\\n\\nRefs #${issueNum}"
+
+The message must follow Conventional Commits (imperative subject, ≤72 chars).${pluginRoot ? `\nFull rules: read ${pluginRoot}/references/conventional-commits.md` : ''}`,
+      { label: `commit-repair:r${scAttempts}:${idx}`, phase: 'Commit', model: M.utility }
     )
     repairsPassed++
   }
