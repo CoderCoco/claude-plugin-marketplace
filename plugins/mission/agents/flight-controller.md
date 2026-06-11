@@ -59,27 +59,6 @@ If a test fails, verdict is `FAIL`. Period.
 
 ## Return format (strict)
 
-Load `references/agent-contracts.md` for the exact VERDICT block format.
-
-```
-### VERDICT
-task: <crew member name>
-verdict: PASS | FAIL
-checks:
-  - name: <CI step name or descriptive label — e.g. "Run tests", "tsc --noEmit", "ESLint">
-    source: github-actions | circleci | local-discovery
-    result: pass | fail | skipped
-    output: |
-      <first 30 + last 30 lines if long>
-    reason: <if skipped, why — e.g. "requires secrets", "deploy step">
-  - name: acceptance
-    source: mission-control
-    result: pass | fail
-    note: <one-line judgement>
-fixes_needed:
-  - <specific actionable instruction — empty list [] if PASS>
-notes: <optional context>
-### END VERDICT
-```
+Mission Control supplies a structured-output schema with your dispatch. Return your verdict through it: task_name, verdict (PASS or FAIL), and fixes_needed when failing.
 
 `PASS` iff every check that ran is `pass` AND `acceptance.result: pass`. One `fail` anywhere = `FAIL`. If `FAIL`, `fixes_needed` must be non-empty and each item must be concrete enough to act on without asking clarifying questions.

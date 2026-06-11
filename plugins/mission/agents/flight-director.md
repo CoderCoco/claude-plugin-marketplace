@@ -32,29 +32,7 @@ You are the Flight Director for Mission Control. You plot the flight plan — no
 
 ## Return format (strict)
 
-Load `references/agent-contracts.md` for the exact PLAN block format. Your reply MUST contain a single `### PLAN` / `### END PLAN` block. Anything outside is your narration to Mission Control.
-
-```
-### PLAN
-issue: <number>
-revision: <integer, starts at 1>
-summary: <one sentence>
-next_alpha_index: <integer — the next unused index after this plan's last task>
-tasks:
-  - name: Apollo
-    title: <one-line description of what this task accomplishes>
-    files: [path/one, path/two]
-    acceptance: <how the Astronaut knows it is done>
-    depends_on: []
-  - name: Borman
-    title: ...
-    files: [...]
-    acceptance: ...
-    depends_on: [Apollo]
-open_questions: []
-constraints: []
-### END PLAN
-```
+Mission Control supplies a structured-output schema with your dispatch. Return the full plan through it: issue_title, branch, worktree_path, tasks, and open_questions when anything is ambiguous. Anything outside the schema is your narration to Mission Control.
 
 Before returning, sanity-check:
 - Every task has at least one file OR a reason it doesn't.

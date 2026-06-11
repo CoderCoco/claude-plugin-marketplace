@@ -54,23 +54,7 @@ Set `copilot_present: true` if ANY of the following are true:
 
 ## Return format (strict)
 
-Load `references/agent-contracts.md` for the exact TRIAGE block format. Your reply MUST contain a single `### TRIAGE` / `### END TRIAGE` block.
-
-```
-### TRIAGE
-comments:
-  - id: 123456789
-    author: alice
-    category: actionable | question | approval | nit | ambiguous
-    file: src/webhook.ts        # only for actionable or nit
-    line: 88                    # only for actionable or nit
-    fix_hint: return 404 not 500 when webhook id is not found
-    reply_draft: |              # only for question
-      The retry uses exponential backoff with full jitter.
-      Maximum delay is capped at 30 seconds after 5 attempts.
-copilot_present: true | false
-### END TRIAGE
-```
+Mission Control supplies a structured-output schema with your dispatch. Return your triage through it: one entry per comment with id, category, and the category-specific fields (fix_hint, reply_draft).
 
 Before returning, sanity-check:
 - Every comment in the input has exactly one entry in the output.

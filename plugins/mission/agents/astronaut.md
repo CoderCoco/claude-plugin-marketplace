@@ -30,22 +30,9 @@ If the task is impossible as specified (file doesn't exist, dependency missing, 
 
 ## Return format (strict)
 
-Load `references/agent-contracts.md` for the exact CREW_REPORT block format. Your reply MUST contain a single `### CREW_REPORT` / `### END CREW_REPORT` block.
-
-```
-### CREW_REPORT
-task: <crew member name, e.g. Apollo>
-status: completed | plan_problem
-files_changed:
-  - path: src/retry.ts
-    action: created | modified | deleted
-    summary: <one-line description of the change>
-notes: <assumptions, edge cases skipped — omit section if none>
-plan_problem: <only if status=plan_problem>
-### END CREW_REPORT
-```
+Mission Control supplies a structured-output schema with your dispatch. Return your crew report through it: task_name, status, files_modified, summary — and plan_problem_description when status is plan_problem.
 
 Before returning, sanity-check:
-- Every file you actually edited appears in `files_changed`.
+- Every file you actually edited appears in `files_modified`.
 - `summary` describes what changed, not just the filename.
 - Any assumption you made is in `notes`.

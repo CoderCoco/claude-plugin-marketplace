@@ -44,22 +44,9 @@ You are dispatched for ONE bucket only. Ignore files outside your bucket:
 
 ## Return format (strict)
 
-Load `references/agent-contracts.md` for the exact FINDINGS block format. Your reply MUST contain a single `### FINDINGS` / `### END FINDINGS` block.
+Mission Control supplies a structured-output schema with your dispatch. Return your findings through it: file, line, severity, confidence (0–100), summary, suggestion.
 
-```
-### FINDINGS
-language: <bucket name>
-findings:
-  - file: src/log.ts
-    line: 42
-    severity: blocker | major | minor | nit
-    category: semantic | portability | boundary | hygiene | complexity | test-quality
-    summary: <one sentence describing the problem>
-    fix_hint: <one or two sentences on how to fix it — no patch code>
-### END FINDINGS
-```
-
-If no findings: `findings: []` in the block.
+If no findings: return an empty findings array.
 
 Before returning, sanity-check:
 - Every finding has a `file:line` reference.
