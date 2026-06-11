@@ -3,9 +3,10 @@
 End-to-end GitHub issue orchestrator for Claude Code.
 
 **One command.** `/mission <issue-number>` drives an issue from plan through
-build, code review, PR open, and PR comment handling — with at most five
-user-touch points in the happy path. Resumable: re-run the same command
-after a Claude restart to pick up where you left off.
+build, code review, and PR open — with at most five user-touch points in the
+happy path. Fully resumable: planning persists a flight plan, each build phase
+persists a workflow runId; re-run the same command after a restart to pick up
+where you left off.
 
 ## Install
 
@@ -16,31 +17,66 @@ after a Claude restart to pick up where you left off.
 ## Usage
 
 ```
-/mission <N>           Start or advance the mission for issue #N
-/mission <N> --auto    Skip the post-planning confirmation
-/mission <N> --status  Print current state; no action
-/mission <N> --finish  Mark mission complete (after PR merged)
-/mission <N> --abandon Remove state file (asks confirmation)
+/mission <N>             Start or resume the mission for issue #N
+/mission <N> --status    Show saved state; no action
+/mission <N> --replan    Discard the plan and re-plan
+/mission <N> --abandon   Clear all saved state (asks confirmation)
 
-# Individual phases
-/pre-launch <N>        Phase 1: read issue, branch, plan
-/liftoff <N>           Phase 2: build (parallel Astronauts)
-/systems-check <N>     Phase 3: polyglot code review + auto-fix
-/docking <N>           Phase 4: open PR
-/comms <N>             Phase 5: handle PR comments
+# Individual phases (same implementations /mission drives)
+/pre-launch <N>          Plan: Flight Director decomposes the issue (interactive)
+/liftoff <N>             Build: parallel Astronauts + Flight Controllers
+/systems-check <N>       Review: polyglot inspectors + auto-repair
+/docking <N>             PR: push branch, open pull request
+/comms <N>               Handle PR review comments (single pass; loop with /loop 5m /comms <N>)
 
-# Meta
-/mission-debrief       Fold new review findings into the rubric
+# Configuration & meta
+/mission:setup           Interactive model configuration
+/mission-debrief         Fold new review findings into the rubric
+```
+
+## Choosing models
+
+Each crew role's model is configurable. Resolution: `--models` flag →
+`.claude/mission.local.md` → built-in defaults.
+
+| Role | Used by | Default |
+|---|---|---|
+| `director` | Flight Director (planning) | `fable` |
+| `inspector` | Systems Inspectors (review) | `fable` |
+| `astronaut` | Build agents | `sonnet` |
+| `controller` | Flight Controllers (verification) | `sonnet` |
+| `capcom` | Comms fetch + triage | `sonnet` |
+| `docking` | PR-opening agent | `sonnet` |
+| `utility` | Micro-agents (commits, pushes, replies) | `haiku` |
+
+Per invocation:
+
+```
+/mission 42 --models director=opus,inspector=opus
+```
+
+Persistently — run `/mission:setup`, or write `.claude/mission.local.md`:
+
+```markdown
+---
+models:
+  director: opus
+  inspector: opus
+---
 ```
 
 ## Crew
 
-| Role | Agent | Job |
-|---|---|---|
-| Flight Director | planner | Decomposes issue into named tasks with dependencies |
-| Astronaut | builder | Implements exactly one task |
-| Flight Controller | verifier | Runs tests/lint/types — PASS or FAIL |
-| Systems Inspector | reviewer | Polyglot semantic code review |
-| CAPCOM | comment handler | Categorises PR comments, drafts replies |
+| Role | Job |
+|---|---|
+| Flight Director | Decomposes the issue into named tasks with dependencies |
+| Astronaut | Implements exactly one task |
+| Flight Controller | Runs tests/lint/types — PASS or FAIL |
+| Systems Inspector | Polyglot semantic code review |
+| CAPCOM | Categorises PR comments, drafts replies |
 
-State files live in `$CLAUDE_PLUGIN_DATA/mission-state/`. Never committed.
+## Architecture
+
+`/mission` orchestrates four phase skills; each wraps one workflow script in
+`workflows/`. State lives in `$CLAUDE_PLUGIN_DATA/mission-runs/issue-<N>/`
+(`plan.json`, workflow runIds, comms state). Never committed.
