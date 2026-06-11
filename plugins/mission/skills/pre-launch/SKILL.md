@@ -40,7 +40,7 @@ if [ -f "$STATE_DIR/plan.json" ]; then
 fi
 ```
 
-If a plan exists and `--replan` was NOT passed: show the task table (Step 6 format) and stop with:
+If a plan exists and `--replan` was NOT passed: show the task table (Step 5 format) and stop with:
 `Plan already exists — run /liftoff <N> (or /mission <N>) to continue, or /pre-launch <N> --replan to start over.`
 
 If `--replan` WAS passed: a new plan invalidates old workflow resume points —

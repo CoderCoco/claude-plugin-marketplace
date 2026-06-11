@@ -36,7 +36,7 @@ You are dispatched for ONE bucket only. Ignore files outside your bucket:
 | Bucket | Extensions |
 |---|---|
 | javascript | .ts .tsx .js .jsx .mts .cts |
-| python | .py .pyw |
+| python | .py |
 | go | .go |
 | rust | .rs |
 | shell | .sh .bash .zsh |
