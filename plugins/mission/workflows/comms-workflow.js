@@ -116,6 +116,10 @@ if (!issueNum || !repo || !prNum || !branch || !worktreePath) {
   throw new Error('args must include issue_number, repo, pr_number, branch, worktree_path')
 }
 
+const MODEL_DEFAULTS = { astronaut: 'sonnet', controller: 'sonnet', inspector: 'fable', capcom: 'sonnet', docking: 'sonnet', utility: 'haiku' }
+const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})
+const pluginRoot = _a.plugin_root || ''
+
 log(`PR #${prNum} — fetching comments newer than ${lastSeenAt}`)
 
 // ── Fetch PR status + new comments ────────────────────────────────────────────
@@ -200,7 +204,7 @@ Return max_comment_at as the ISO timestamp of the newest comment (empty string i
     label: 'fetch',
     phase: 'Fetch',
     schema: PR_STATUS_SCHEMA,
-    model: 'sonnet',
+    model: M.capcom,
   }
 )
 
@@ -251,7 +255,7 @@ Categories:
     phase: 'Triage',
     schema: TRIAGE_SCHEMA,
     agentType: 'mission:capcom',
-    model: 'sonnet',
+    model: M.capcom,
   }
 )
 
@@ -294,7 +298,7 @@ Return comment_id: "${comment.id}" in your report.`,
         phase: 'Fix',
         schema: FIX_REPORT_SCHEMA,
         agentType: 'mission:astronaut',
-        model: 'sonnet',
+        model: M.astronaut,
       }
     )
   ))
@@ -321,7 +325,7 @@ FAIL with specific fixes_needed otherwise. Return comment_id: "${comment.id}".`,
           phase: 'Fix',
           schema: COMMS_VERDICT_SCHEMA,
           agentType: 'mission:flight-controller',
-          model: 'sonnet',
+          model: M.controller,
         }
       )
     })
@@ -349,8 +353,9 @@ FAIL with specific fixes_needed otherwise. Return comment_id: "${comment.id}".`,
   git -C ${worktreePath} add ${report.files_modified.join(' ')}
   git -C ${worktreePath} commit -m "fix(${scope}): ${report.summary.slice(0, 60)}\\n\\nRefs #${issueNum}\\nCo-Authored-By: ${comment.author} (via PR comment)"
 
+The message must follow Conventional Commits (imperative subject, ≤72 chars).${pluginRoot ? `\nFull rules: read ${pluginRoot}/references/conventional-commits.md` : ''}
 Return the commit SHA.`,
-      { label: `commit:${comment.id}`, phase: 'Fix', model: 'haiku' }
+      { label: `commit:${comment.id}`, phase: 'Fix', model: M.utility }
     )
     passedComments.push(comment)
     itemsFixed++
@@ -362,7 +367,7 @@ Return the commit SHA.`,
     await agent(
       `Push the branch in worktree ${worktreePath}:
   git -C ${worktreePath} push origin ${branch}`,
-      { label: 'push', phase: 'Fix', model: 'haiku' }
+      { label: 'push', phase: 'Fix', model: M.utility }
     )
 
     // Resolve inline comment threads
@@ -374,7 +379,7 @@ Return the commit SHA.`,
   gh api graphql \\
     -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \\
     -f tid="${threadInfo.thread_id}"`,
-          { label: `resolve:${comment.id}`, phase: 'Fix', model: 'haiku' }
+          { label: `resolve:${comment.id}`, phase: 'Fix', model: M.utility }
         )
       }
     }
@@ -386,7 +391,7 @@ Return the commit SHA.`,
     await agent(
       `Post a PR comment on PR #${prNum} in ${repo} summarising what was addressed:
   gh pr comment ${prNum} --repo ${repo} --body "I've addressed the following feedback:\n\n${fixedSummary}\n\nPlease re-review when you get a chance."`,
-      { label: 'summary-comment', phase: 'Fix', model: 'haiku' }
+      { label: 'summary-comment', phase: 'Fix', model: M.utility }
     )
 
     // Re-request review from everyone who reviewed — includes Copilot if it reviewed
@@ -395,7 +400,7 @@ Return the commit SHA.`,
       await agent(
         `Re-request review on PR #${prNum} in ${repo} from all prior reviewers: ${reviewers.join(', ')}
   gh pr edit ${prNum} --repo ${repo} --add-reviewer "${reviewers.join(',')}" 2>/dev/null || true`,
-        { label: 're-request-review', phase: 'Fix', model: 'haiku' }
+        { label: 're-request-review', phase: 'Fix', model: M.utility }
       )
       log(`Re-requested review from: ${reviewers.join(', ')}`)
     }
@@ -422,7 +427,7 @@ ${isInline && threadInfo && threadInfo.thread_id
   ? `\nThen resolve the thread:\n  gh api graphql -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' -f tid="${threadInfo.thread_id}"`
   : ''
 }`,
-    { label: `reply:${q.id}`, phase: 'Fix', model: 'haiku' }
+    { label: `reply:${q.id}`, phase: 'Fix', model: M.utility }
   )
   itemsReplied++
   log(`Replied to ${q.author}'s question`)

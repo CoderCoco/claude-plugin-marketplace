@@ -26,6 +26,10 @@ const repo     = _a.repo
 const plan     = _a.plan
 if (!issueNum || !repo || !plan) throw new Error('args must include issue_number, repo, and plan')
 
+const MODEL_DEFAULTS = { astronaut: 'sonnet', controller: 'sonnet', inspector: 'fable', capcom: 'sonnet', docking: 'sonnet', utility: 'haiku' }
+const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})
+const pluginRoot = _a.plugin_root || ''
+
 // ── Docking ────────────────────────────────────────────────────────────────────
 
 phase('Docking')
@@ -56,7 +60,7 @@ Return pr_number and pr_url.`,
     label: 'Docking',
     phase: 'Docking',
     schema: PR_SCHEMA,
-    model: 'sonnet',
+    model: M.docking,
   }
 )
 
