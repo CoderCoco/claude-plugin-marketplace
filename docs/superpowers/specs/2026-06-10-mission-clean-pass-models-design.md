@@ -1,109 +1,172 @@
 # Mission Plugin: Clean Pass + Per-Invocation Model Selection (v0.7.0)
 
-**Date:** 2026-06-10
+**Date:** 2026-06-10 (rev 2 — architecture unification added after user approval)
 **Status:** Approved by user
 **Plugin:** `plugins/mission` (currently v0.6.6)
 
 ## Goals
 
-1. Remove obsolete items and fix inconsistencies left over from the plugin's
-   evolution (voyage/pirate → mission/space theme; monolithic workflow → three
-   focused workflows).
+1. Remove obsolete items and unify the plugin on a single architecture — the
+   plugin currently carries two parallel implementations (old direct-Agent
+   state-machine skills vs new workflow files), and the duplication is the main
+   source of drift and bugs.
 2. Let the user choose which model each agent role uses, per invocation, with
-   sensible persistent defaults.
+   persistent per-project defaults and an interactive `/mission:setup`.
 
-## Part 1 — Cleanup
+## Part 1 — Architecture unification
 
-### 1.1 Deletions
+### Current state (two parallel paths)
 
-- `workflows/mission-workflow.js` — deprecated stub containing only a comment;
-  superseded by liftoff/systems-check/docking workflows.
-- `references/comms-queries.md` — orphaned GraphQL queries, superseded by the
-  REST-based `comms-workflow.js`. Referenced nowhere.
+- **New path:** `/mission` runs the Flight Director inline (Agent tool +
+  structured output), then drives `liftoff-workflow.js`,
+  `systems-check-workflow.js`, `docking-workflow.js` via `scriptPath`. State =
+  runIds under `mission-runs/issue-<N>/`. The plan is never persisted.
+- **Old path:** standalone `/pre-launch`, `/liftoff`, `/systems-check`,
+  `/docking` skills dispatch Astronauts/Inspectors directly via the Agent tool
+  and depend on `mission-state-{init,read,update}.sh` + the
+  `mission-state/issue-<N>.json` schema. They never touch the workflow files.
+  This path also carries known bugs (`systems_check_findings` key unsupported,
+  pirate-era field names) and the text-block agent contracts
+  (`### PLAN` / `### CREW_REPORT` / …) that the workflow path replaced with
+  structured-output schemas.
 
-### 1.2 State bug fix
+### Target state (one path)
 
-`skills/systems-check/SKILL.md` calls
-`mission-state-update.sh <issue> systems_check_findings <json>`, but
-`scripts/mission-state-update.sh` has no handler for that key, so the call
-fails. Add a `systems_check_findings` case that writes the JSON array to
-`.systems_check.findings` (matching the schema in `references/mission-state.md`
-line ~54). Add a corresponding test in `scripts/test/test-state-update.sh`.
+`/mission` becomes a thin orchestrator that invokes the four phase skills in
+sequence; each phase skill is a thin wrapper around its workflow. Standalone
+phase invocation keeps working — both entry styles share one implementation.
 
-### 1.3 Comms skill workflow invocation
+```
+/mission N
+  └─ Skill mission:pre-launch   — interactive FD planning → writes plan.json
+  └─ Skill mission:liftoff      — Workflow(liftoff-workflow.js)
+  └─ Skill mission:systems-check — Workflow(systems-check-workflow.js) + exhaustion loop
+  └─ Skill mission:docking      — Workflow(docking-workflow.js) + watcher offer
+/comms N                         — Workflow(comms-workflow.js)  (single pass)
+```
 
-`skills/comms/SKILL.md` still uses the old pattern: `cat` the workflow file and
-pass it as `script:`. Migrate to `scriptPath:
-${CLAUDE_PLUGIN_ROOT}/workflows/comms-workflow.js`, matching the other four
-skills (this pattern was adopted repo-wide in v0.6.5, commit 2b386c3).
+### State directory (single home)
 
-### 1.4 Legacy field renames (state schema change)
+`${CLAUDE_PLUGIN_DATA}/mission-runs/issue-<N>/` containing:
 
-Rename pirate-era field names to mission-themed equivalents everywhere they
-appear:
+- `plan.json` — persisted flight plan:
+  `{ issue_number, repo, issue_title, branch, worktree_path, tasks: [{name,
+  title, files, depends_on, acceptance}], created_at }`. Written by pre-launch;
+  read by the three phase wrappers. Doubles as the planning resume point —
+  `/mission` no longer re-runs the Flight Director when a plan already exists.
+- `liftoff.runid`, `sc.runid`, `docking.runid` — workflow resume handles.
+- `comms-state.json` — comms `last_seen_at` (moved from
+  `mission-runs/issue-<N>-comms-state.json`).
 
-| Old | New |
+`/mission N --abandon` removes the whole directory.
+
+### Skill responsibilities
+
+- **pre-launch (rewrite):** parse args/models → if `plan.json` exists and no
+  `--replan`, show it and stop → dispatch Flight Director via Agent tool
+  (`subagent_type: mission:flight-director`, `model: <models.director>`,
+  structured-output plan schema; FD prompt creates branch + worktree
+  idempotently) → open_questions loop with the user → write `plan.json` →
+  present plan table → "Ready for liftoff? [Y/n]". Never auto-advances; both
+  `/mission` and standalone use it. The FD prompt template moves here from the
+  mission skill (single copy).
+- **liftoff (rewrite):** read `plan.json` (error → "run /pre-launch N") →
+  `EnterWorktree` → Workflow `scriptPath` liftoff-workflow.js with
+  `resumeFromRunId` from `liftoff.runid`, args
+  `{issue_number, repo, plan, models, plugin_root}` → save runId → report →
+  suggest `/systems-check N`.
+- **systems-check (rewrite):** same wrapper shape; owns the interactive
+  exhaustion loop (deferred-findings accumulation, AskUserQuestion on
+  `status: 'exhausted'` — Try more rounds / Skip and open PR / Stop) that
+  currently lives in the mission skill. Reports deferred low-confidence
+  findings at the end.
+- **docking (rewrite):** wrapper → docking workflow → report PR → offer the
+  comms watcher (`/loop 5m /comms N` or `/schedule`).
+- **mission (update):** parse args → `--status` / `--abandon` → invoke the four
+  phase skills via the Skill tool in order → final report. The FD prompt, plan
+  schema, and SC loop move out into the phase skills.
+- **comms (update):** migrate `script:`+`cat` to `scriptPath:`; add models;
+  state path moves into the per-issue directory.
+- **setup (new):** see Part 2.
+- **mission-debrief:** unchanged.
+
+### Deletions
+
+| File | Why |
 |---|---|
-| `navigator_attempts` | `director_attempts` |
-| `quartermaster_verdict` | `controller_verdict` |
+| `workflows/mission-workflow.js` | deprecated comment-only stub |
+| `scripts/mission-state-init.sh`, `mission-state-read.sh`, `mission-state-update.sh`, `mission-print-log.sh` | old-path state machinery; no consumers after unification |
+| `scripts/test/test-state-init.sh`, `test-state-update.sh` | test the deleted scripts |
+| `references/mission-state.md` | schema of the deleted state file |
+| `references/comms-queries.md` | orphaned GraphQL queries, superseded by REST comms workflow |
+| `references/agent-contracts.md` | text-block contracts superseded by structured-output schemas |
 
-Files affected: `scripts/mission-state-init.sh`, `scripts/mission-state-update.sh`
-(including the `plan_task_verdict` handler's target field),
-`skills/pre-launch/SKILL.md`, `references/mission-state.md`, and the tests under
-`scripts/test/`. **Breaking:** any in-flight mission state file becomes
-unreadable for these fields; acceptable per user (no mission mid-run).
+Kept: `references/crew-roster.md` (FD prompt), `references/review-rubric.md`
+(+ mission-debrief), `references/halt-protocol.md` (phase wrappers use the
+banner shape when a workflow throws), `references/conventional-commits.md`
+(now wired into commit agents).
 
-### 1.5 Wire in conventional-commits.md
+This also moots the planned pirate-era field renames (`navigator_attempts`,
+`crewmate_attempts`, `quartermaster_verdict`) — those fields die with the
+state scripts.
 
-The commit-step micro-agents in `liftoff-workflow.js`, `systems-check-workflow.js`,
-and `comms-workflow.js` get a short prompt addition: follow Conventional Commits
-(`type(scope): subject`, imperative mood), with a pointer to
-`references/conventional-commits.md` for the full rules. Keep the inline portion
-to 1–2 lines — workflow scripts cannot read files, so the prompt carries the
-essentials and the file path carries the rest (agents can Read it).
+### Agent file cleanup
 
-### 1.6 README touch-up
+In all five `agents/*.md`, replace the closing "Load
+`references/agent-contracts.md` for the exact … block format" mandate with a
+structured-output instruction ("Mission Control supplies a structured-output
+schema; return your report through it"). Frontmatter (tools, model, color)
+unchanged.
 
-- Fix the `/mission` description: it runs the Flight Director **in the current
-  conversation** (via the Agent tool) rather than dispatching the /pre-launch
-  skill.
-- Document the new model-selection feature (flag syntax, settings file, roles,
-  defaults) and the `/mission:setup` interactive walkthrough.
+### Workflow fixes (beyond models)
+
+- `systems-check-workflow.js`: specialist inspectors use `phase: 'Systems
+  Check'`, which matches no declared phase — change to `'Review'`.
+- Commit-step agents in liftoff/systems-check/comms workflows: prompts gain a
+  one-line Conventional Commits rule plus "full rules:
+  `<plugin_root>/references/conventional-commits.md`" (workflows receive
+  `plugin_root` via args since they cannot read env vars).
+
+### README rewrite
+
+Document the unified architecture: usage (drop the unimplemented `--auto` and
+`--finish` flags), the phase skills as workflow wrappers, `/mission:setup`,
+model roles/flag/settings file, state location `$CLAUDE_PLUGIN_DATA/mission-runs/`.
 
 ## Part 2 — Per-invocation model selection
 
 ### Roles and defaults
 
-Six knobs, valid values `haiku` | `sonnet` | `opus` | `fable`:
+Seven knobs, valid values `haiku` | `sonnet` | `opus` | `fable`:
 
 | Role | Maps to | Default |
 |---|---|---|
-| `director` | Flight Director (Agent-tool call in /mission and /pre-launch) | `fable` |
-| `astronaut` | Astronaut build agents (liftoff, systems-check repairs) | `sonnet` |
+| `director` | Flight Director (Agent-tool call in pre-launch) | `fable` |
+| `astronaut` | Build agents (liftoff tasks, SC repairs, comms fixes) | `sonnet` |
 | `controller` | Flight Controller verify agents | `sonnet` |
-| `inspector` | Systems Inspector review agents | `fable` |
-| `capcom` | CAPCOM triage agent (comms) | `sonnet` |
-| `utility` | Micro-agents: commit, push, resolve, reply, scout, summary | `haiku` |
+| `inspector` | Systems Inspector review agents (language + specialist) | `fable` |
+| `capcom` | Comms fetch + triage agents | `sonnet` |
+| `docking` | PR-opening agent | `sonnet` |
+| `utility` | Micro-agents: scout, commit, push, resolve, reply, summary, re-request | `haiku` |
 
-Defaults exactly preserve current behavior.
+Note: today's systems-check workflow hardcodes `model: 'sonnet'` on inspectors,
+silently overriding the `fable` agent frontmatter; the `fable` default restores
+the intended behavior.
 
 ### Resolution order
 
 `--models` flag > `.claude/mission.local.md` settings file > built-in defaults.
-Merging is per-role (setting one role leaves the others at the next layer down).
+Merging is per-role. Unknown role names or model values: warn and ignore that
+entry (do not abort).
 
 ### Flag syntax
 
-`/mission 42 --models director=opus,inspector=opus`
-
-Accepted by `/mission`, `/pre-launch`, `/liftoff`, `/systems-check`, `/docking`,
-and `/comms`. Unknown role names or model values: the skill warns and ignores
-that entry (does not abort the mission).
+`/mission 42 --models director=opus,inspector=opus` — accepted by `/mission`,
+`/pre-launch`, `/liftoff`, `/systems-check`, `/docking`, `/comms`.
 
 ### Settings file
 
-`.claude/mission.local.md` in the project root (standard plugin-settings
-pattern), YAML frontmatter:
+`.claude/mission.local.md` in the repo root, YAML frontmatter:
 
 ```yaml
 ---
@@ -113,65 +176,53 @@ models:
 ---
 ```
 
-Skills read it if present; absence is not an error.
-
-### Mechanics
-
-1. Each skill gains a "Resolve models" step early on: parse `--models` from the
-   invocation args, read the settings file if present, merge over defaults,
-   producing a `models` object.
-2. `/mission` and `/pre-launch` pass `model: <models.director>` on the
-   Agent-tool call that dispatches the Flight Director.
-3. Every Workflow invocation includes `models` in `args`.
-4. Each workflow declares its defaults and merges:
-   `const M = { ...DEFAULTS, ...(_a.models || {}) }`, then every hardcoded
-   `model: 'sonnet'` / `model: 'haiku'` becomes the matching `M.<role>`.
-   (Defaults are duplicated per workflow file by necessity — workflow scripts
-   are self-contained and cannot import.)
-5. Agent frontmatter (`agents/*.md`) keeps its current `model:` values as the
-   fallback for any invocation outside these workflows.
+Skills Read it if present; absence is not an error. Frontmatter is structured
+to allow future settings beyond `models` without format changes.
 
 ### Setup skill
 
-New skill `skills/setup/SKILL.md` (invoked as `/mission:setup`, triggers:
-"mission setup", "configure mission models") that creates or updates the
-settings file interactively:
+New skill `skills/setup/SKILL.md` (`/mission:setup`, triggers: "mission setup",
+"configure mission models") — interactive walkthrough:
 
 1. If `.claude/mission.local.md` exists, read it and present current values
    (setup doubles as reconfigure).
 2. Ask model choices via AskUserQuestion: one question for `director`, one for
-   `inspector`, one grouped for `astronaut`/`controller`/`capcom`, one for
-   `utility`. Options haiku/sonnet/opus/fable, current effective value marked.
-3. Write `.claude/mission.local.md` with YAML frontmatter plus a short body
-   documenting the roles and valid values. Only roles that differ from the
-   built-in defaults are written, keeping the file minimal.
-4. If `.gitignore` does not cover the file, offer to add `.claude/*.local.md`.
+   `inspector`, one grouped for `astronaut`/`controller`/`capcom`/`docking`,
+   one for `utility`. Options haiku/sonnet/opus/fable, current effective value
+   marked.
+3. Write `.claude/mission.local.md` (frontmatter + short body documenting roles
+   and valid values). Only roles differing from built-in defaults are written.
+4. If `.gitignore` does not cover it, offer to add `.claude/*.local.md`.
 
-The file's frontmatter is structured to allow future settings beyond `models`
-(e.g., attempt caps) without format changes, but setup only handles models for
-now.
+### Mechanics
 
-### State
-
-The resolved `models` object is **not** persisted to mission state — it is
-per-invocation by design. Resuming a mission re-resolves from flag/file/defaults.
+1. Each skill gains a "Resolve models" step: Read the settings file if present,
+   apply `--models` entries over it, fall back to defaults per role.
+2. Pre-launch passes `model: <models.director>` on the Flight Director Agent
+   call.
+3. Every Workflow invocation includes `models` (and `plugin_root`) in `args`.
+4. Each workflow merges:
+   `const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})` and every
+   hardcoded `model: 'sonnet'` / `'haiku'` becomes the matching `M.<role>`.
+   (Defaults duplicated per workflow file by necessity — workflow scripts are
+   self-contained.)
+5. Agent frontmatter keeps its `model:` values as fallback for invocations
+   outside these workflows.
+6. Models are **not** persisted to mission state — per-invocation by design.
 
 ## Versioning
 
-Single minor bump to **0.7.0** in `plugins/mission/.claude-plugin/plugin.json`
-covering both parts.
+Single minor bump to **0.7.0** in `plugins/mission/.claude-plugin/plugin.json`.
 
 ## Testing
 
-- Run `scripts/test/test-state-init.sh` and `test-state-update.sh` after the
-  rename + new-key changes; extend them to cover `systems_check_findings` and
-  the renamed fields.
-- Syntax-check each modified workflow file with `node --check`.
-- Grep verification: no remaining `navigator_attempts` / `quartermaster_verdict`
-  occurrences; no remaining hardcoded `model: 'sonnet'|'haiku'` in workflows.
+- `node --check` on every modified workflow file.
+- Grep verification: no `mission-state-` / `agent-contracts` / `mark-the-charts`
+  references remain outside git history; no hardcoded `model: 'sonnet'|'haiku'`
+  in workflows; no `script:`+`cat` workflow invocation in skills.
+- README usage block matches the implemented flags.
 
 ## Out of scope
 
-- No changes to crew naming, phase structure, or the comms polling cadence.
-- No new agent roles.
-- `references/agent-contracts.md` under-referencing noted but left as-is.
+- No changes to crew naming, phase structure inside workflows, or comms cadence.
+- mission-debrief and the review rubric unchanged.
