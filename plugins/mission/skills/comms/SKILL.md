@@ -50,30 +50,68 @@ Built-in defaults: `director=fable`, `astronaut=sonnet`, `controller=sonnet`, `i
 
 The merged result is `MODELS`, passed to the workflow as `args.models`.
 
-## Step 2: Discover branch, worktree, and PR
+## Step 2: Discover PR, branch, and worktree
+
+Discover the **PR first** — it is the authoritative source of the branch name
+(`headRefName`). Guessing the branch first is unreliable: `git branch --list`
+prefixes worktree-checked-out branches with `+` (not `*`), and multiple branches
+can match the `claude/issue-N-*` glob, so `head -1` may pick the wrong one.
 
 ```bash
-BRANCH=$(git branch --list "claude/issue-${ISSUE_NUM}-*" | head -1 | tr -d ' *')
-if [ -z "$BRANCH" ]; then
-  BRANCH=$(git branch -r --list "origin/claude/issue-${ISSUE_NUM}-*" | head -1 | tr -d ' ' | sed 's|^origin/||')
-fi
-[ -n "$BRANCH" ] || { echo "No branch found for issue #${ISSUE_NUM}. Has /mission run yet?"; exit 1; }
+# 1. Find the open PR for this issue — match the mission branch convention…
+PR_JSON=$(gh pr list --repo "$REPO" --state open --json number,url,headRefName,body \
+  --jq "[.[] | select(.headRefName | startswith(\"claude/issue-${ISSUE_NUM}-\"))] | .[0] // empty")
 
-WORKTREE_DIR="$REPO_ROOT/.claude/worktrees"
-WORKTREE_PATH=$(ls -d "$WORKTREE_DIR"/issue-${ISSUE_NUM}-* 2>/dev/null | head -1)
+# …falling back to a 'Closes #N' reference in the body if the prefix convention changes.
+if [ -z "$PR_JSON" ]; then
+  PR_JSON=$(gh pr list --repo "$REPO" --state open --json number,url,headRefName,body \
+    --jq "[.[] | select(.body | test(\"[Cc]loses #${ISSUE_NUM}\\\\b\"))] | .[0] // empty")
+fi
+
+# Distinguish "branch exists but no PR" from "nothing at all".
+if [ -z "$PR_JSON" ]; then
+  EXISTING_BRANCH=$(git branch --list "claude/issue-${ISSUE_NUM}-*" | head -1 | sed 's/^[+* ]*//')
+  if [ -n "$EXISTING_BRANCH" ]; then
+    echo "Branch '$EXISTING_BRANCH' exists but no open PR references issue #${ISSUE_NUM}. Has /mission docking completed?"
+  else
+    echo "No open PR or branch found for issue #${ISSUE_NUM}. Has /mission run yet?"
+  fi
+  exit 1
+fi
+
+PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
+PR_URL=$(echo "$PR_JSON" | jq -r '.url')
+BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')   # authoritative — the PR's real head
+echo "Processing PR #${PR_NUM} (branch $BRANCH): $PR_URL"
+
+# 2. Resolve the worktree from git's own records, not by string-munging the branch name.
+WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
+  $1=="worktree"{p=$2} $1=="branch" && $2==b {print p}')
+
+# Fall back to creating it if the branch isn't checked out in any worktree.
 if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
+  WORKTREE_DIR="$REPO_ROOT/.claude/worktrees"
   SLUG=$(echo "$BRANCH" | sed "s|claude/issue-${ISSUE_NUM}-||")
   WORKTREE_PATH="$WORKTREE_DIR/issue-${ISSUE_NUM}-${SLUG}"
   mkdir -p "$WORKTREE_DIR"
+  git fetch origin "$BRANCH" 2>/dev/null || true
   git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || true
 fi
+[ -d "$WORKTREE_PATH" ] || { echo "Could not resolve a worktree for branch $BRANCH."; exit 1; }
 
-PR_JSON=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number,url,state --jq '.[0] // empty')
-[ -n "$PR_JSON" ] || { echo "No open PR found for branch $BRANCH. Has /mission docking completed?"; exit 1; }
-PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
-PR_URL=$(echo "$PR_JSON" | jq -r '.url')
-echo "Processing PR #${PR_NUM}: $PR_URL"
+# 3. Warn if the branch is behind origin/main — a stale base means CI and reviewers
+#    react to outdated code. Offer to merge before processing comments.
+git -C "$WORKTREE_PATH" fetch origin main 2>/dev/null || true
+BEHIND=$(git -C "$WORKTREE_PATH" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+if [ "$BEHIND" -gt 0 ]; then
+  echo "⚠️  Branch $BRANCH is $BEHIND commit(s) behind origin/main — CI and reviews may be reacting to a stale base."
+  echo "    Merge before processing:  git -C \"$WORKTREE_PATH\" merge origin/main"
+fi
 ```
+
+If the branch is behind `origin/main`, **ask the user whether to merge `origin/main`
+into the worktree before continuing** rather than processing comments against a
+stale base. Only proceed once they confirm (or decline the merge).
 
 ## Step 3: Handle --status
 
