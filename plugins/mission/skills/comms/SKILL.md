@@ -60,7 +60,8 @@ mission run.
 
 ```bash
 # 1. Resolve the PR directly — it is the source of truth for branch + issue.
-PR_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json number,url,headRefName,body,state 2>/dev/null)
+#    Omit `body` here: a PR body with raw control chars crashes a local `| jq`.
+PR_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json number,url,headRefName,state 2>/dev/null)
 [ -n "$PR_JSON" ] || { echo "No PR #${PR_NUM} found in ${REPO}."; exit 1; }
 
 PR_URL=$(echo "$PR_JSON" | jq -r '.url')
@@ -69,7 +70,9 @@ BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')   # authoritative — the PR's 
 # Derive the mission issue from the branch convention, then a 'Closes #N' body ref.
 ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
 if [ -z "$ISSUE_NUM" ]; then
-  ISSUE_NUM=$(echo "$PR_JSON" | jq -r '.body // ""' | sed -nE 's/.*[Cc]loses #([0-9]+).*/\1/p' | head -1)
+  # Only now fetch the body — server-side --jq + control-char strip avoids the crash.
+  BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null | tr -d '\000-\010\013\014\016-\037')
+  ISSUE_NUM=$(echo "$BODY" | sed -nE 's/.*[Cc]loses #([0-9]+).*/\1/p' | head -1)
 fi
 # Non-mission PR with no derivable issue — key state on the PR number itself.
 [ -n "$ISSUE_NUM" ] || ISSUE_NUM="$PR_NUM"
@@ -194,14 +197,15 @@ All threads resolved and CI green — ready to merge.
 ```
 Pass complete for PR #<pr_number>:
   Fixed: <items_fixed> comment(s)
-  Replied: <items_replied> question(s)
+  Replied: <items_replied> reply/replies (questions + acknowledgements)
   Last seen: <last_seen_at>
 ```
 
-If `result.open_items` is non-empty, list them:
+If `result.open_items` is non-empty, list every unresolved thread / comment still
+needing attention (each entry has `author`, `path`, `summary`):
 ```
-Ambiguous comments needing manual attention:
-  @<author>: "<summary>"
+Still open — needs manual attention:
+  @<author> <path>: "<summary>"
   …
 ```
 

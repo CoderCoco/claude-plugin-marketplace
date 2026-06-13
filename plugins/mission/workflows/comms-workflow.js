@@ -49,7 +49,29 @@ const PR_STATUS_SCHEMA = {
     },
     thread_map: {
       type: 'object',
-      description: 'Maps comment id (string) → { thread_id: string, is_resolved: boolean }',
+      description: 'Maps thread-root comment databaseId (string) → { thread_id: string, is_resolved: boolean, last_author: string }',
+    },
+    viewer_login: {
+      type: 'string',
+      description: 'Login of the authenticated gh user (us) — used to detect our own replies',
+    },
+    open_threads: {
+      type: 'array',
+      description: 'Every review thread with isResolved=false, regardless of timestamp — so a long-open thread is reconsidered every pass',
+      items: {
+        type: 'object',
+        required: ['id', 'thread_id', 'author', 'body'],
+        properties: {
+          id:          { type: 'string', description: 'thread-root comment databaseId' },
+          thread_id:   { type: 'string', description: 'GraphQL review thread node id' },
+          author:      { type: 'string' },
+          body:        { type: 'string' },
+          url:         { type: 'string' },
+          file:        { type: 'string' },
+          line:        { type: 'number' },
+          last_author: { type: 'string', description: 'login of the most recent commenter in the thread' },
+        },
+      },
     },
   },
 }
@@ -65,7 +87,7 @@ const TRIAGE_SCHEMA = {
         required: ['id', 'category'],
         properties: {
           id:             { type: 'string' },
-          category:       { type: 'string', enum: ['actionable', 'question', 'ignore', 'ambiguous'] },
+          category:       { type: 'string', enum: ['actionable', 'question', 'acknowledge', 'ignore', 'ambiguous'] },
           author:         { type: 'string' },
           body_summary:   { type: 'string' },
           type:           { type: 'string', enum: ['pr_comment', 'review_body', 'inline_comment'] },
@@ -73,7 +95,7 @@ const TRIAGE_SCHEMA = {
           line:           { type: 'number' },
           in_reply_to_id: { type: 'string' },
           fix_hint:       { type: 'string', description: 'For actionable: what needs to change' },
-          reply_draft:    { type: 'string', description: 'For question: auto-generated answer' },
+          reply_draft:    { type: 'string', description: 'For question/acknowledge: auto-generated reply' },
         },
       },
     },
@@ -161,21 +183,41 @@ Run these queries:
          file: .path, line: (.line // .original_line)
        }]'
 
-4. Review thread map:
+4. Review threads — run the query ONCE, then derive both thread_map and open_threads:
    OWNER=$(echo "${repo}" | cut -d/ -f1)
    REPO_NAME=$(echo "${repo}" | cut -d/ -f2)
-   gh api graphql \\
+   THREADS_JSON=$(gh api graphql \\
      -f query='query($owner:String!,$name:String!,$number:Int!){
        repository(owner:$owner,name:$name){
          pullRequest(number:$number){
-           reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{databaseId}}}}
+           reviewThreads(first:100){nodes{
+             id isResolved
+             root: comments(first:1){nodes{databaseId author{login} body path line}}
+             last: comments(last:1){nodes{author{login}}}
+           }}
          }
        }
      }' \\
      -f owner="$OWNER" -f name="$REPO_NAME" -F number=${prNum} \\
-     | jq '.data.repository.pullRequest.reviewThreads.nodes |
-           map({key: (.comments.nodes[0].databaseId | tostring),
-                value: {thread_id: .id, is_resolved: .isResolved}}) | from_entries'
+     | tr -d '\\000-\\010\\013\\014\\016-\\037')
+
+   # thread_map: root databaseId → { thread_id, is_resolved, last_author }
+   echo "$THREADS_JSON" | jq '.data.repository.pullRequest.reviewThreads.nodes |
+     map({key: (.root.nodes[0].databaseId | tostring),
+          value: {thread_id: .id, is_resolved: .isResolved,
+                  last_author: (.last.nodes[0].author.login // "")}}) | from_entries'
+
+   # open_threads: every unresolved thread, regardless of timestamp
+   echo "$THREADS_JSON" | jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+     | select(.isResolved | not) | {
+         id: (.root.nodes[0].databaseId | tostring),
+         thread_id: .id,
+         author: (.root.nodes[0].author.login // ""),
+         body: (.root.nodes[0].body // ""),
+         file: (.root.nodes[0].path // null),
+         line: (.root.nodes[0].line // null),
+         last_author: (.last.nodes[0].author.login // "")
+       }]'
 
 5. PR state, approval, CI, all-threads check, and reviewers who want changes:
    OWNER=$(echo "${repo}" | cut -d/ -f1)
@@ -199,8 +241,11 @@ Run these queries:
      reviewed_by: $reviews
    }'
 
-Merge all comment arrays, deduplicate by id, sort by timestamp.
-Return max_comment_at as the ISO timestamp of the newest comment (empty string if none).`,
+6. Authenticated user (us): gh api user --jq '.login'  → return as viewer_login
+
+Merge the three comment arrays (queries 1–3), deduplicate by id, sort by timestamp.
+Return max_comment_at as the ISO timestamp of the newest comment (empty string if none).
+Return thread_map and open_threads (query 4) and viewer_login (query 6) as well.`,
   {
     label: 'fetch',
     phase: 'Fetch',
@@ -229,28 +274,70 @@ if (status.all_threads_resolved && status.ci_passing) {
   return { status: 'resolved', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, open_items: [] }
 }
 
-if (status.new_comments.length === 0) {
-  log('No new comments this pass')
+// ── Build the candidate set (deterministic — resolution is NOT an LLM decision) ──
+
+const viewerLogin = status.viewer_login || ''
+const threadMap   = status.thread_map || {}
+const openThreads = status.open_threads || []
+
+// Enrich a comment with its thread's resolution state (join by thread-root id).
+const enrich = (c) => {
+  if (c.type !== 'inline_comment') {
+    return { ...c, is_resolved: null, thread_id: null, thread_last_author: null }
+  }
+  const t = threadMap[c.in_reply_to_id || c.id] || {}
+  return {
+    ...c,
+    is_resolved:        !!t.is_resolved,
+    thread_id:          t.thread_id || null,
+    thread_last_author: t.last_author || null,
+  }
+}
+
+// Open threads (timestamp-independent) mapped into comment shape, so a long-open
+// thread is reconsidered every pass instead of being excluded by last_seen_at.
+const openThreadComments = openThreads.map(t => ({
+  id: t.id, node_id: null, author: t.author, body: t.body,
+  url: t.url || null, timestamp: '', type: 'inline_comment',
+  in_reply_to_id: null, file: t.file || null, line: t.line || null,
+  is_resolved: false, thread_id: t.thread_id || null, thread_last_author: t.last_author || null,
+}))
+
+// Union of time-windowed comments and open threads, deduped by id; resolved inline
+// threads never reach triage.
+const byId = {}
+for (const c of status.new_comments.map(enrich)) byId[c.id] = c
+for (const c of openThreadComments) if (!byId[c.id]) byId[c.id] = c
+const candidates = Object.values(byId).filter(c => !(c.type === 'inline_comment' && c.is_resolved))
+
+if (candidates.length === 0) {
+  log('No actionable comments or open threads this pass')
   return { status: 'pending', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, open_items: [] }
 }
 
-log(`${status.new_comments.length} new comment(s) — triaging`)
+log(`${candidates.length} comment(s)/open thread(s) — triaging`)
 
 // ── Triage ─────────────────────────────────────────────────────────────────────
 
 phase('Triage')
 
 const triage = await agent(
-  `You are CAPCOM for mission issue #${issueNum}, PR #${prNum} in ${repo}.
+  `You are CAPCOM for mission issue #${issueNum}, PR #${prNum} in ${repo}. We are "${viewerLogin}".
 
-Categorise each of the following ${status.new_comments.length} new comment(s):
-${JSON.stringify(status.new_comments, null, 2)}
+Each comment below carries is_resolved/thread_id (already resolved threads have been removed —
+everything you see on an inline thread is UNRESOLVED). Categorise each of the ${candidates.length}:
+${JSON.stringify(candidates, null, 2)}
 
 Categories:
-- actionable: reviewer is asking for a code change → set fix_hint to a one-sentence description of what to change
-- question:   reviewer is asking a question → set reply_draft to a helpful answer
-- ignore:     praise, thanks, already-resolved thread, bot noise, or a reply to our own comment (avoid reply loops)
-- ambiguous:  genuinely unclear — you cannot classify confidently`,
+- actionable:  reviewer wants a code change that is NOT yet made → set fix_hint (one sentence)
+- question:    reviewer is asking a question → set reply_draft to a helpful answer
+- acknowledge: reviewer's point is valid but the branch ALREADY addresses it → set reply_draft
+               confirming it's fixed (it will be posted and the thread resolved, no code change)
+- ignore:      praise, thanks, emoji, bot noise, or our own comment (author "${viewerLogin}")
+- ambiguous:   genuinely unclear, or architectural pushback with no concrete ask
+
+HARD RULE: a comment on an UNRESOLVED inline thread (is_resolved: false) is NEVER ignore.
+If it's already handled in the branch, use acknowledge; otherwise actionable/question/ambiguous.`,
   {
     label: 'triage',
     phase: 'Triage',
@@ -264,17 +351,28 @@ if (!triage) {
   return { status: 'triage_failed', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, open_items: [] }
 }
 
-const actionable = triage.comments.filter(c => c.category === 'actionable')
-const questions  = triage.comments.filter(c => c.category === 'question')
-const ambiguous  = triage.comments.filter(c => c.category === 'ambiguous')
+const actionable   = triage.comments.filter(c => c.category === 'actionable')
+const questions    = triage.comments.filter(c => c.category === 'question')
+const acknowledged = triage.comments.filter(c => c.category === 'acknowledge')
+const ambiguous    = triage.comments.filter(c => c.category === 'ambiguous')
+const ignored      = triage.comments.filter(c => c.category === 'ignore')
 
-log(`Triage: ${actionable.length} actionable, ${questions.length} question(s), ${ambiguous.length} ambiguous, ${triage.comments.filter(c => c.category === 'ignore').length} ignored`)
+// Recover the enriched thread data triage doesn't echo (thread_id, thread_last_author).
+const candById = {}
+candidates.forEach(c => { candById[c.id] = c })
+const threadIdOf = (id) => (candById[id] || {}).thread_id || null
+
+log(`Triage: ${actionable.length} actionable, ${questions.length} question(s), ${acknowledged.length} acknowledge, ${ambiguous.length} ambiguous, ${ignored.length} ignored`)
 if (ambiguous.length > 0) {
   log(`Ambiguous (manual attention needed): ${ambiguous.map(c => `"${c.body_summary}"`).join(', ')}`)
 }
+// Surface ignored items so silent drops are visible.
+ignored.forEach(c => log(`Ignored ${c.type} by ${c.author}: "${c.body_summary || ''}"`))
 
 let itemsFixed = 0
 let itemsReplied = 0
+const repliedIds  = new Set()   // comment ids we replied to this pass (anti double-reply)
+const resolvedIds = new Set()   // thread-root ids we resolved this pass
 
 // ── Fix actionable comments ────────────────────────────────────────────────────
 
@@ -375,15 +473,16 @@ Return the commit SHA.`,
 
     // Resolve inline comment threads
     for (const comment of passedComments.filter(c => c.type === 'inline_comment')) {
-      const threadInfo = (status.thread_map || {})[comment.id]
-      if (threadInfo && threadInfo.thread_id && !threadInfo.is_resolved) {
+      const tid = threadIdOf(comment.id)
+      if (tid) {
         await agent(
           `Resolve this review thread:
   gh api graphql \\
     -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \\
-    -f tid="${threadInfo.thread_id}"`,
+    -f tid="${tid}"`,
           { label: `resolve:${comment.id}`, phase: 'Downlink', model: M.utility }
         )
+        resolvedIds.add(comment.id)
       }
     }
 
@@ -412,31 +511,71 @@ Return the commit SHA.`,
   }
 }
 
-// ── Auto-post replies to questions ─────────────────────────────────────────────
+// ── Reply to questions / acknowledgements, then guarantee a terminal action ─────
 
-if (questions.some(q => q.reply_draft)) phase('Downlink')
+const stillOpen = (c) => c.type === 'inline_comment' && c.thread_id && !resolvedIds.has(c.id) && !repliedIds.has(c.id)
+const needsDownlink = questions.some(q => q.reply_draft) || acknowledged.some(a => a.reply_draft)
+  || candidates.some(stillOpen)
+if (needsDownlink) phase('Downlink')
 
-for (const q of questions.filter(q => q.reply_draft)) {
-  const isInline = q.type === 'inline_comment'
-  const threadInfo = (status.thread_map || {})[q.id]
+// Post a reply to a comment/thread, optionally resolving it. Records tracking sets.
+const replyTo = async (c, body, { resolve }) => {
+  const isInline = c.type === 'inline_comment'
+  const tid = isInline ? threadIdOf(c.id) : null
   await agent(
-    `Post a reply to ${q.author}'s ${isInline ? 'inline' : 'PR'} comment on PR #${prNum} in ${repo}.
+    `Post a reply to ${c.author}'s ${isInline ? 'inline' : 'PR'} comment on PR #${prNum} in ${repo}.
 
-Reply text: "${q.reply_draft}"
+Reply text: "${body}"
 
 ${isInline
-  ? `gh api "repos/${repo}/pulls/${prNum}/comments" -X POST -f body="${q.reply_draft}" -F in_reply_to=${q.id}`
-  : `gh pr comment ${prNum} --repo ${repo} --body "${q.reply_draft}"`
-}
-${isInline && threadInfo && threadInfo.thread_id
-  ? `\nThen resolve the thread:\n  gh api graphql -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' -f tid="${threadInfo.thread_id}"`
+  ? `gh api "repos/${repo}/pulls/${prNum}/comments" -X POST -f body="${body}" -F in_reply_to=${c.id}`
+  : `gh pr comment ${prNum} --repo ${repo} --body "${body}"`
+}${resolve && tid
+  ? `\nThen resolve the thread:\n  gh api graphql -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' -f tid="${tid}"`
   : ''
 }`,
-    { label: `reply:${q.id}`, phase: 'Downlink', model: M.utility }
+    { label: `reply:${c.id}`, phase: 'Downlink', model: M.utility }
   )
+  repliedIds.add(c.id)
+  if (resolve && tid) resolvedIds.add(c.id)
   itemsReplied++
+}
+
+for (const q of questions.filter(q => q.reply_draft)) {
+  await replyTo(q, q.reply_draft, { resolve: true })
   log(`Replied to ${q.author}'s question`)
 }
+
+for (const a of acknowledged.filter(a => a.reply_draft)) {
+  await replyTo(a, a.reply_draft, { resolve: true })
+  log(`Acknowledged & resolved ${a.author}'s thread`)
+}
+
+// Terminal-action guarantee: every unresolved thread that got no reply this pass
+// gets one — but only if a REVIEWER spoke last. If we already replied on a prior
+// pass (we're the last commenter), don't re-reply; it's surfaced in open_items.
+for (const c of candidates.filter(stillOpen)) {
+  if (c.thread_last_author && c.thread_last_author === viewerLogin) continue
+  await replyTo(c, "Acknowledged — we're tracking this and will follow up. Leaving the thread open for now.", { resolve: false })
+  log(`Acknowledged open thread by ${c.author} (no auto-fix this pass)`)
+}
+
+// ── Honest reporting: every unresolved thread + any ambiguous comment ───────────
+
+const triageById = {}
+triage.comments.forEach(t => { triageById[t.id] = t })
+const openItems = []
+const seenOpen = new Set()
+const addOpen = (c) => {
+  if (!c || seenOpen.has(c.id)) return
+  seenOpen.add(c.id)
+  const summary = (triageById[c.id] && triageById[c.id].body_summary) || (c.body || '').slice(0, 140)
+  openItems.push({ id: c.id, author: c.author, path: c.file || null, summary })
+}
+candidates
+  .filter(c => c.type === 'inline_comment' && c.thread_id && !resolvedIds.has(c.id))
+  .forEach(addOpen)
+ambiguous.forEach(c => addOpen(candById[c.id] || c))
 
 return {
   status:        'pending',
@@ -445,5 +584,5 @@ return {
   last_seen_at:  newLastSeenAt,
   items_fixed:   itemsFixed,
   items_replied: itemsReplied,
-  open_items:    ambiguous.map(c => ({ id: c.id, author: c.author, summary: c.body_summary })),
+  open_items:    openItems,
 }

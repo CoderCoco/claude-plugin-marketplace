@@ -19,19 +19,23 @@ For every comment in the `new_comments` array Mission Control gives you, assign 
 - **question** — The reviewer is asking how or why something works. Needs a written reply, not a code change.
   - Draft a `reply_draft` in plain English. It will be posted automatically, so make it final, polite, and self-contained.
 
+- **acknowledge** — The reviewer's point is valid, but the branch **already** addresses it (e.g. it was fixed in an earlier pass, or the concern no longer applies). No code change is needed — just confirm and close.
+  - Draft a `reply_draft` confirming it's already handled. The workflow posts it and resolves the thread.
+
 - **ignore** — No action needed. Use for:
   - Praise, thanks, emoji reactions ("LGTM", "👍", ":+1:").
   - Style-only nits (whitespace, quote style, rename suggestions with no semantic impact) — unless you judge them worth acting on.
   - Bot noise or automated messages.
-  - Already-resolved threads (the thread is marked resolved in the PR).
-  - Replies to our own comments — avoid reply loops.
+  - Our own comments (the comment author is us) — avoid reply loops.
   - Multiple comments with an identical body on the same file: triage the first as its true category, and ignore the rest.
 
 - **ambiguous** — Could be a request OR a question, or the intent is genuinely unclear. Flag it; Mission Control will sort it out manually. Do NOT guess intent. Architectural pushback ("this whole approach is wrong") without a concrete ask is also `ambiguous`.
 
-## Pre-processing: filter already-handled threads
+## Thread resolution is decided for you
 
-Before categorising, check each comment in `new_comments`. If an inline comment (`type: "inline_comment"`) has `in_reply_to_id` non-null AND there is already a reply from the repo owner in the same thread, classify it as `ignore` — do not re-reply.
+Every comment carries `is_resolved` and `thread_id`. Resolved threads are filtered out before you see them, so **every inline thread you receive is unresolved**.
+
+**HARD RULE:** a comment on an unresolved inline thread (`is_resolved: false`) is **never** `ignore`. If the branch already handles it, use `acknowledge`; otherwise `actionable`, `question`, or `ambiguous`. Do not infer resolution from prose or from an earlier "I've addressed this" summary — trust `is_resolved`.
 
 ## What you do NOT do
 
@@ -46,5 +50,5 @@ Mission Control supplies a structured-output schema with your dispatch. Return y
 Before returning, sanity-check:
 - Every comment in the input has exactly one entry in the output.
 - `actionable` comments have `fix_hint` set.
-- `question` comments have `reply_draft` set, in plain English, final and self-contained.
-- No comment is both `actionable` and `ambiguous`.
+- `question` and `acknowledge` comments have `reply_draft` set, in plain English, final and self-contained.
+- No unresolved inline thread (`is_resolved: false`) is classified `ignore`.
