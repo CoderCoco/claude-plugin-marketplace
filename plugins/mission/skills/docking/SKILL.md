@@ -38,9 +38,11 @@ Call the Workflow tool with:
 - `resumeFromRunId`: `PRIOR` if non-empty, otherwise omit
 - `args`: `{ issue_number: <ISSUE_NUM>, repo: "<REPO>", plan: <plan.json object>, models: <MODELS>, plugin_root: "<value of $CLAUDE_PLUGIN_ROOT>" }`
 
-Save the returned `runId`:
+Save the returned `runId`, and persist the PR so the rest of the mission flow
+(`/mission --status`, `/comms`) knows it:
 ```bash
 echo "<runId>" > "$STATE_DIR/docking.runid"
+echo "{\"pr_number\":<pr_number>,\"pr_url\":\"<pr_url>\"}" > "$STATE_DIR/pr.json"
 ```
 
 If the workflow throws (push conflict, gh auth), present the error using the banner shape in `references/halt-protocol.md` with options: [1] fix the stated problem and re-run `/docking <N>`, [2] open the PR manually then re-run.
@@ -51,7 +53,7 @@ If the workflow throws (push conflict, gh auth), present the error using the ban
 🚀 Docking complete! PR #<pr_number> is open: <pr_url>
 
 Want me to watch for PR comments automatically?
-  /loop 5m /comms <N>              — poll every 5 minutes in this session
-  /schedule "Run /comms <N>" --every 30m — scheduled background check
-Or just run /comms <N> manually when reviews arrive.
+  /loop 5m /comms <pr_number>              — poll every 5 minutes in this session
+  /schedule "Run /comms <pr_number>" --every 30m — scheduled background check
+Or just run /comms <pr_number> manually when reviews arrive.
 ```
