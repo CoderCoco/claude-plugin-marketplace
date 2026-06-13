@@ -27,7 +27,8 @@ where you left off.
 /liftoff <N>             Build: parallel Astronauts + Flight Controllers
 /systems-check <N>       Review: polyglot inspectors + auto-repair
 /docking <N>             PR: push branch, open pull request
-/comms <N>               Handle PR review comments (single pass; loop with /loop 5m /comms <N>)
+/comms <PR>              Handle PR review comments — takes the PR number, not the issue
+                         (single pass; loop with /loop 5m /comms <PR>)
 
 # Configuration & meta
 /mission:setup           Interactive model configuration

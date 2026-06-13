@@ -2,9 +2,10 @@ export const meta = {
   name: 'comms-workflow',
   description: 'Single-pass PR comment processor — fetch new comments, triage, fix actionable ones, reply to questions, re-request Copilot review. Invoke repeatedly via /loop for continuous watching.',
   phases: [
-    { title: 'Fetch',  detail: 'Check PR status and new comments since last poll' },
-    { title: 'Triage', detail: 'CAPCOM categorises: actionable / question / ignore / ambiguous' },
-    { title: 'Fix',    detail: 'Astronauts implement fixes; FC verifies; push on PASS' },
+    { title: 'Fetch',    detail: 'Check PR status and new comments since last poll' },
+    { title: 'Triage',   detail: 'CAPCOM categorises: actionable / question / ignore / ambiguous' },
+    { title: 'Fix',      detail: 'Astronauts implement fixes; FC verifies; commit on PASS' },
+    { title: 'Downlink', detail: 'Push, resolve threads, summary comment, re-request review, reply to questions' },
   ],
 }
 
@@ -363,11 +364,13 @@ Return the commit SHA.`,
   }
 
   if (passedComments.length > 0) {
+    phase('Downlink')
+
     // Push all fixes
     await agent(
       `Push the branch in worktree ${worktreePath}:
   git -C ${worktreePath} push origin ${branch}`,
-      { label: 'push', phase: 'Fix', model: M.utility }
+      { label: 'push', phase: 'Downlink', model: M.utility }
     )
 
     // Resolve inline comment threads
@@ -379,7 +382,7 @@ Return the commit SHA.`,
   gh api graphql \\
     -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \\
     -f tid="${threadInfo.thread_id}"`,
-          { label: `resolve:${comment.id}`, phase: 'Fix', model: M.utility }
+          { label: `resolve:${comment.id}`, phase: 'Downlink', model: M.utility }
         )
       }
     }
@@ -391,7 +394,7 @@ Return the commit SHA.`,
     await agent(
       `Post a PR comment on PR #${prNum} in ${repo} summarising what was addressed:
   gh pr comment ${prNum} --repo ${repo} --body "I've addressed the following feedback:\n\n${fixedSummary}\n\nPlease re-review when you get a chance."`,
-      { label: 'summary-comment', phase: 'Fix', model: M.utility }
+      { label: 'summary-comment', phase: 'Downlink', model: M.utility }
     )
 
     // Re-request review from everyone who reviewed — includes Copilot if it reviewed
@@ -400,7 +403,7 @@ Return the commit SHA.`,
       await agent(
         `Re-request review on PR #${prNum} in ${repo} from all prior reviewers: ${reviewers.join(', ')}
   gh pr edit ${prNum} --repo ${repo} --add-reviewer "${reviewers.join(',')}" 2>/dev/null || true`,
-        { label: 're-request-review', phase: 'Fix', model: M.utility }
+        { label: 're-request-review', phase: 'Downlink', model: M.utility }
       )
       log(`Re-requested review from: ${reviewers.join(', ')}`)
     }
@@ -410,6 +413,8 @@ Return the commit SHA.`,
 }
 
 // ── Auto-post replies to questions ─────────────────────────────────────────────
+
+if (questions.some(q => q.reply_draft)) phase('Downlink')
 
 for (const q of questions.filter(q => q.reply_draft)) {
   const isInline = q.type === 'inline_comment'
@@ -427,7 +432,7 @@ ${isInline && threadInfo && threadInfo.thread_id
   ? `\nThen resolve the thread:\n  gh api graphql -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' -f tid="${threadInfo.thread_id}"`
   : ''
 }`,
-    { label: `reply:${q.id}`, phase: 'Fix', model: M.utility }
+    { label: `reply:${q.id}`, phase: 'Downlink', model: M.utility }
   )
   itemsReplied++
   log(`Replied to ${q.author}'s question`)

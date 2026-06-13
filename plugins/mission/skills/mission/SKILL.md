@@ -34,6 +34,8 @@ for phase in liftoff sc docking; do
   FILE="$STATE_DIR/${phase}.runid"
   [ -f "$FILE" ] && echo "  ${phase}: $(cat "$FILE")" || echo "  ${phase}: not started"
 done
+[ -f "$STATE_DIR/pr.json" ] \
+  && jq -r '"  PR: #\(.pr_number) — \(.pr_url)"' "$STATE_DIR/pr.json"
 [ -f "$STATE_DIR/comms-state.json" ] \
   && echo "  comms last seen: $(jq -r '.last_seen_at' "$STATE_DIR/comms-state.json")"
 ```
@@ -79,7 +81,7 @@ Mission complete!
   Branch: <branch from plan.json>
   PR:     #<pr_number> — <pr_url>
 
-Run /comms <issue_number> when PR reviews arrive.
+Run /comms <pr_number> when PR reviews arrive.
 ```
 
 Relay any low-confidence or user-skipped findings the systems-check phase reported.

@@ -1,44 +1,45 @@
 ---
 name: comms
-description: Use when the mission PR has review comments to address. Runs a single-pass fetch→triage→fix→reply cycle and saves state. For continuous watching, guide the user to run `/loop 5m /comms <N>`. Trigger on "comms <N>", "/comms", or when the user wants to handle PR review comments.
+description: Use when the mission PR has review comments to address. Runs a single-pass fetch→triage→fix→reply cycle and saves state. For continuous watching, guide the user to run `/loop 5m /comms <PR>`. Trigger on "comms <PR>", "/comms", or when the user wants to handle PR review comments.
 ---
 
 # /comms — PR Comment Processor
 
-Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, respond to reviewers, re-request review. Saves `last_seen_at` so each invocation only processes truly new comments. For automatic polling, use `/loop 5m /comms <N>`.
+Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, respond to reviewers, re-request review. Saves `last_seen_at` so each invocation only processes truly new comments. For automatic polling, use `/loop 5m /comms <PR>`.
 
 ## Step 1: Parse arguments
 
-Supported invocations:
-- `/comms 42` — process new comments (one pass)
-- `/comms 42 --status` — show last-seen timestamp
-- `/comms 42 --abandon` — clear saved state
-- `/comms 42 --models capcom=opus` — model overrides for this run
+`/comms` operates on a **PR number** — the PR is the unit of work. Supported invocations:
+- `/comms 7` — process new comments on PR #7 (one pass)
+- `/comms 7 --status` — show last-seen timestamp
+- `/comms 7 --abandon` — clear saved state
+- `/comms 7 --models capcom=opus` — model overrides for this run
+- `/comms` — resolve the open PR for the current branch automatically
 
 ```bash
-ISSUE_NUM="${ARG1:-}"
+PR_NUM="${ARG1:-}"
 FLAG="${ARG2:-}"
 
-if [ -z "$ISSUE_NUM" ] || [[ "$ISSUE_NUM" == --* ]]; then
-  FLAG="${ISSUE_NUM:-$FLAG}"
-  ISSUE_NUM=""
+# Allow a flag in the first position: `/comms --status`
+if [ -z "$PR_NUM" ] || [[ "$PR_NUM" == --* ]]; then
+  FLAG="${PR_NUM:-$FLAG}"
+  PR_NUM=""
 fi
 
-if [ -z "$ISSUE_NUM" ]; then
-  BRANCH=$(git branch --show-current)
-  ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
-fi
-
-[ -n "$ISSUE_NUM" ] || { echo "Usage: /comms <issue_number> [--status|--abandon] [--models …]"; exit 1; }
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 REPO_ROOT=$(git rev-parse --show-toplevel)
-STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}"
-mkdir -p "$STATE_DIR"
-STATE_FILE="$STATE_DIR/comms-state.json"
-# Migrate pre-0.7.0 state location
-OLD_STATE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}-comms-state.json"
-[ -f "$OLD_STATE" ] && [ ! -f "$STATE_FILE" ] && mv "$OLD_STATE" "$STATE_FILE"
+
+# No PR number given — resolve the open PR for the current branch.
+if [ -z "$PR_NUM" ]; then
+  PR_NUM=$(gh pr list --repo "$REPO" --head "$(git branch --show-current)" \
+    --state open --limit 5 --json number --jq '.[0].number // empty')
+fi
+
+[ -n "$PR_NUM" ] || { echo "Usage: /comms <pr_number> [--status|--abandon] [--models …]"; exit 1; }
 ```
+
+The mission issue number and the state directory are derived from the PR in
+Step 2, so `/comms` stays co-located with the rest of the mission run.
 
 ## Step 1b: Resolve models
 
@@ -50,30 +51,72 @@ Built-in defaults: `director=fable`, `astronaut=sonnet`, `controller=sonnet`, `i
 
 The merged result is `MODELS`, passed to the workflow as `args.models`.
 
-## Step 2: Discover branch, worktree, and PR
+## Step 2: Resolve the PR, issue, branch, and worktree
+
+The PR is the unit of work. Resolve it directly, derive the branch from its
+`headRefName` (authoritative), and derive the mission issue number from the PR
+so state and commit refs stay issue-keyed and consistent with the rest of the
+mission run.
 
 ```bash
-BRANCH=$(git branch --list "claude/issue-${ISSUE_NUM}-*" | head -1 | tr -d ' *')
-if [ -z "$BRANCH" ]; then
-  BRANCH=$(git branch -r --list "origin/claude/issue-${ISSUE_NUM}-*" | head -1 | tr -d ' ' | sed 's|^origin/||')
-fi
-[ -n "$BRANCH" ] || { echo "No branch found for issue #${ISSUE_NUM}. Has /mission run yet?"; exit 1; }
+# 1. Resolve the PR directly — it is the source of truth for branch + issue.
+PR_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json number,url,headRefName,body,state 2>/dev/null)
+[ -n "$PR_JSON" ] || { echo "No PR #${PR_NUM} found in ${REPO}."; exit 1; }
 
-WORKTREE_DIR="$REPO_ROOT/.claude/worktrees"
-WORKTREE_PATH=$(ls -d "$WORKTREE_DIR"/issue-${ISSUE_NUM}-* 2>/dev/null | head -1)
+PR_URL=$(echo "$PR_JSON" | jq -r '.url')
+BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')   # authoritative — the PR's real head
+
+# Derive the mission issue from the branch convention, then a 'Closes #N' body ref.
+ISSUE_NUM=$(echo "$BRANCH" | sed -nE 's|^claude/issue-([0-9]+)-.*|\1|p')
+if [ -z "$ISSUE_NUM" ]; then
+  ISSUE_NUM=$(echo "$PR_JSON" | jq -r '.body // ""' | sed -nE 's/.*[Cc]loses #([0-9]+).*/\1/p' | head -1)
+fi
+# Non-mission PR with no derivable issue — key state on the PR number itself.
+[ -n "$ISSUE_NUM" ] || ISSUE_NUM="$PR_NUM"
+echo "Processing PR #${PR_NUM} (branch $BRANCH, issue #${ISSUE_NUM}): $PR_URL"
+
+# State is issue-keyed and co-located with the mission run (read by /mission --status).
+STATE_DIR="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}"
+mkdir -p "$STATE_DIR"
+STATE_FILE="$STATE_DIR/comms-state.json"
+# Migrate pre-0.7.0 state location
+OLD_STATE="${CLAUDE_PLUGIN_DATA}/mission-runs/issue-${ISSUE_NUM}-comms-state.json"
+[ -f "$OLD_STATE" ] && [ ! -f "$STATE_FILE" ] && mv "$OLD_STATE" "$STATE_FILE"
+
+# 2. Resolve the worktree from git's own records, not by string-munging the branch name.
+#    Stop at the first match — a branch can legitimately appear in more than one entry.
+WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
+  $1=="worktree"{p=$2} $1=="branch" && $2==b {print p; exit}')
+
+# Fall back to creating it if the branch isn't checked out in any worktree.
 if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
+  WORKTREE_DIR="$REPO_ROOT/.claude/worktrees"
   SLUG=$(echo "$BRANCH" | sed "s|claude/issue-${ISSUE_NUM}-||")
   WORKTREE_PATH="$WORKTREE_DIR/issue-${ISSUE_NUM}-${SLUG}"
   mkdir -p "$WORKTREE_DIR"
-  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || true
+  git fetch origin "$BRANCH" 2>/dev/null || true
+  # worktree add needs a local ref; create the branch from origin if it doesn't exist locally.
+  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || true
+  else
+    git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BRANCH" 2>/dev/null || true
+  fi
 fi
+[ -d "$WORKTREE_PATH" ] || { echo "Could not resolve a worktree for branch $BRANCH."; exit 1; }
 
-PR_JSON=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number,url,state --jq '.[0] // empty')
-[ -n "$PR_JSON" ] || { echo "No open PR found for branch $BRANCH. Has /mission docking completed?"; exit 1; }
-PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
-PR_URL=$(echo "$PR_JSON" | jq -r '.url')
-echo "Processing PR #${PR_NUM}: $PR_URL"
+# 3. Warn if the branch is behind origin/main — a stale base means CI and reviewers
+#    react to outdated code. Offer to merge before processing comments.
+git -C "$WORKTREE_PATH" fetch origin main 2>/dev/null || true
+BEHIND=$(git -C "$WORKTREE_PATH" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+if [ "$BEHIND" -gt 0 ]; then
+  echo "⚠️  Branch $BRANCH is $BEHIND commit(s) behind origin/main — CI and reviews may be reacting to a stale base."
+  echo "    Merge before processing:  git -C \"$WORKTREE_PATH\" merge origin/main"
+fi
 ```
+
+If the branch is behind `origin/main`, **ask the user whether to merge `origin/main`
+into the worktree before continuing** rather than processing comments against a
+stale base. Only proceed once they confirm (or decline the merge).
 
 ## Step 3: Handle --status
 
@@ -164,8 +207,8 @@ Ambiguous comments needing manual attention:
 
 Always end with:
 ```
-Run /comms <N> again to check for new comments, or:
-  /loop 5m /comms <N>   — watch automatically every 5 minutes
+Run /comms <PR> again to check for new comments, or:
+  /loop 5m /comms <PR>   — watch automatically every 5 minutes
 ```
 
-If the workflow throws, the error message explains what failed. Re-run `/comms <N>` to retry.
+If the workflow throws, the error message explains what failed. Re-run `/comms <PR>` to retry.
