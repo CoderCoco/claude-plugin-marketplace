@@ -59,12 +59,13 @@ can match the `claude/issue-N-*` glob, so `head -1` may pick the wrong one.
 
 ```bash
 # 1. Find the open PR for this issue — match the mission branch convention…
-PR_JSON=$(gh pr list --repo "$REPO" --state open --json number,url,headRefName,body \
+#    --limit is explicit: gh pr list defaults to 30 and could miss the PR in a busy repo.
+PR_JSON=$(gh pr list --repo "$REPO" --state open --limit 200 --json number,url,headRefName,body \
   --jq "[.[] | select(.headRefName | startswith(\"claude/issue-${ISSUE_NUM}-\"))] | .[0] // empty")
 
 # …falling back to a 'Closes #N' reference in the body if the prefix convention changes.
 if [ -z "$PR_JSON" ]; then
-  PR_JSON=$(gh pr list --repo "$REPO" --state open --json number,url,headRefName,body \
+  PR_JSON=$(gh pr list --repo "$REPO" --state open --limit 200 --json number,url,headRefName,body \
     --jq "[.[] | select(.body | test(\"[Cc]loses #${ISSUE_NUM}\\\\b\"))] | .[0] // empty")
 fi
 
@@ -85,8 +86,9 @@ BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')   # authoritative — the PR's 
 echo "Processing PR #${PR_NUM} (branch $BRANCH): $PR_URL"
 
 # 2. Resolve the worktree from git's own records, not by string-munging the branch name.
+#    Stop at the first match — a branch can legitimately appear in more than one entry.
 WORKTREE_PATH=$(git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
-  $1=="worktree"{p=$2} $1=="branch" && $2==b {print p}')
+  $1=="worktree"{p=$2} $1=="branch" && $2==b {print p; exit}')
 
 # Fall back to creating it if the branch isn't checked out in any worktree.
 if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
@@ -95,7 +97,12 @@ if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
   WORKTREE_PATH="$WORKTREE_DIR/issue-${ISSUE_NUM}-${SLUG}"
   mkdir -p "$WORKTREE_DIR"
   git fetch origin "$BRANCH" 2>/dev/null || true
-  git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || true
+  # worktree add needs a local ref; create the branch from origin if it doesn't exist locally.
+  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    git worktree add "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || true
+  else
+    git worktree add -b "$BRANCH" "$WORKTREE_PATH" "origin/$BRANCH" 2>/dev/null || true
+  fi
 fi
 [ -d "$WORKTREE_PATH" ] || { echo "Could not resolve a worktree for branch $BRANCH."; exit 1; }
 
