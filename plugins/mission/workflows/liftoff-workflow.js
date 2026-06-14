@@ -93,7 +93,8 @@ Attempt: ${attempt} of ${TASK_ATTEMPT_CAP}
 
 Run the project's tests, lint, and type checks inside the worktree.
 PASS only if the implementation satisfies the acceptance criterion and all checks pass.
-FAIL with specific, actionable fixes_needed otherwise.`,
+FAIL with specific, actionable fixes_needed otherwise.
+Set task_name to exactly "${task.name}".`,
       {
         label: `FC:${task.name}:${attempt}.${i + 1}`,
         phase: 'Verify',
@@ -199,7 +200,7 @@ Implement this task exactly — no more, no less.
 Use absolute paths or git -C for all file and git operations.
 Do NOT run git add or git commit — the Flight Controller handles that.${retryCtx}
 
-Return a crew report with task_name, status, files_modified, and a summary.`,
+Return a crew report whose task_name is exactly "${task.name}", plus status, files_modified, and a summary.`,
           {
             label: `Astronaut:${task.name}:${s.attempts + 1}`,
             phase: 'Build',
@@ -209,6 +210,12 @@ Return a crew report with task_name, status, files_modified, and a summary.`,
           }
         )
       }))
+
+      // parallel() preserves input order, so crewReports[i] is toBuild[i]'s report.
+      // Normalise task_name to the canonical crew name — the schema can't pin it to
+      // a per-task constant, and the model frequently echoes the task *title* here,
+      // which would make every taskState[...] lookup undefined and crash the round.
+      crewReports.forEach((rep, i) => { if (rep) rep.task_name = toBuild[i].name })
 
       const planProblems = crewReports.filter(rep => rep && rep.status === 'plan_problem')
       if (planProblems.length > 0) {
@@ -235,8 +242,11 @@ Return a crew report with task_name, status, files_modified, and a summary.`,
       })
     )
 
+    // Same positional guarantee: verdicts[i] is pending[i]'s verdict. The Flight
+    // Controller shares the unconstrained task_name schema and can likewise echo
+    // the task title, so match by index rather than trusting the returned name.
     const verdictsByName = {}
-    verdicts.filter(Boolean).forEach(v => { verdictsByName[v.task_name] = v })
+    verdicts.forEach((v, i) => { if (v) verdictsByName[pending[i].name] = v })
 
     // ── Commit PASSed / queue FAILed (sequential to avoid git lock race) ───────
 
