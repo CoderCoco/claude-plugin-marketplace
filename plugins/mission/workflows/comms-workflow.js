@@ -1,6 +1,6 @@
 export const meta = {
   name: 'comms-workflow',
-  description: 'Single-pass PR comment processor — fetch new comments, triage, fix actionable ones, reply to questions, re-request Copilot review. Invoke repeatedly via /loop for continuous watching.',
+  description: 'Single-pass PR comment processor — fetch new comments, triage, fix actionable ones, reply to questions, re-request review from all reviewers. Invoke repeatedly via /loop for continuous watching.',
   phases: [
     { title: 'Fetch',    detail: 'Check PR status and new comments since last poll' },
     { title: 'Triage',   detail: 'CAPCOM categorises: actionable / question / ignore / ambiguous' },
@@ -163,7 +163,7 @@ Run these queries:
          type: "pr_comment", in_reply_to_id: null, file: null, line: null
        }]'
 
-2. Review summary bodies (Copilot posts here):
+2. Review summary bodies (the top-level body of any review — human or bot):
    gh api "repos/${repo}/pulls/${prNum}/reviews" --paginate \\
      | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
      | jq '[.[] | select((.submitted_at // .created_at) > "${lastSeenAt}" and .body != "" and .body != null) | {
