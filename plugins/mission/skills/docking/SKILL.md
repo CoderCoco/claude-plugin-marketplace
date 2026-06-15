@@ -24,6 +24,7 @@ Built-in defaults: `director=fable`, `astronaut=sonnet`, `controller=sonnet`, `i
 1. If `.claude/mission.local.md` exists at the repo root, Read it and take any entries under `models:` in its YAML frontmatter.
 2. If the invocation included `--models role=value,...`, apply those entries on top.
 3. Valid roles: `director`, `astronaut`, `controller`, `inspector`, `capcom`, `docking`, `utility`. Valid values: `haiku`, `sonnet`, `opus`, `fable`. Warn about and ignore any invalid entry — never abort over one.
+4. **Fable fallback.** Fable is unavailable in some environments (e.g. headless or cron runs), where spawning an agent with it hard-errors. Before launching, for any role whose resolved value is `fable`, confirm Fable is among this session's available models. If you cannot confirm it, downgrade that role — `director`→`opus`, `inspector`→`sonnet`, every other role→`sonnet` — and tell the user which roles were downgraded. Never pass `fable` to an agent you cannot confirm supports it.
 
 The merged result is `MODELS`, passed to the workflow as `args.models`.
 

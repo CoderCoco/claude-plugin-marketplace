@@ -50,6 +50,11 @@ Each crew role's model is configurable. Resolution: `--models` flag →
 | `docking` | PR-opening agent | `sonnet` |
 | `utility` | Micro-agents (commits, pushes, replies) | `haiku` |
 
+Fable is unavailable in some environments (e.g. headless or cron runs). When a
+role resolves to `fable` and Fable can't be confirmed available, the skill
+downgrades it gracefully (`director`→`opus`, `inspector`→`sonnet`) rather than
+hard-erroring the agent spawn.
+
 Per invocation:
 
 ```

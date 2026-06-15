@@ -107,6 +107,26 @@ const MODEL_DEFAULTS = { astronaut: 'sonnet', controller: 'sonnet', inspector: '
 const M = Object.assign({}, MODEL_DEFAULTS, _a.models || {})
 const pluginRoot = _a.plugin_root || ''
 
+// ── Scope discipline ─────────────────────────────────────────────────────────
+// Inspectors/specialists name "issue #N" but, without the plan, have no idea what
+// the issue is *about* — so they flag pre-existing debt and propose adjacent
+// cleanups that repair Astronauts then chase, exploding the diff. Inject both the
+// concrete intended scope and a hard discipline rule into every reviewing prompt.
+
+const issueScope = `This is issue #${issueNum}: "${plan.issue_title || ''}".
+Intended scope — only these files and their direct, necessary follow-ons:
+${plan.tasks.map(t => `  - ${t.files.join(', ')} — ${t.acceptance || t.title}`).join('\n')}`
+
+const SCOPE_RULE = `
+SCOPE DISCIPLINE (critical):
+- Only report defects/regressions/inconsistencies INTRODUCED by this branch's diff.
+- Do NOT report pre-existing issues, unrelated tech debt, or style preferences.
+- Do NOT propose adjacent refactors, broader cleanups, or removing/decommissioning
+  any code, file, or doc beyond the scope above. A separate concern belongs in a
+  separate issue — at most a 'nit', never actionable.
+- A finding is actionable ONLY if leaving it unfixed makes THIS issue's change
+  itself incorrect or broken.`
+
 // ── Systems Check ──────────────────────────────────────────────────────────────
 
 const LANGUAGE_BUCKET_EXTS = {
@@ -142,7 +162,9 @@ const scout = await agent(
    - "migration-safety": database migrations or destructive schema changes
    For each specialist, write a full, targeted inspection prompt (include the worktree path ${plan.worktree_path} and issue number #${issueNum}).
 
-Return active_buckets, focus_areas, and specialist_agents (omit specialist_agents or leave it empty if none are needed).`,
+Return active_buckets, focus_areas, and specialist_agents (omit specialist_agents or leave it empty if none are needed).
+
+${issueScope}${SCOPE_RULE}`,
   { label: 'scout', phase: 'Review', schema: SCOUT_SCHEMA, model: M.utility }
 )
 
@@ -152,6 +174,22 @@ if (scout && scout.focus_areas) scout.focus_areas.forEach(fa => { focusByBucket[
 const specialistDefs = (scout && scout.specialist_agents) || []
 
 log(`Active buckets: ${[...activeBucketNames].join(', ') || 'none'} | Specialists: ${specialistDefs.map(s => s.label).join(', ') || 'none'}`)
+
+// ── Cascade guard ──────────────────────────────────────────────────────────────
+// Repairs must never chase files this branch never touched. Compute the branch's
+// own changed-file set once, up front, and drop any actionable finding outside it
+// before dispatching repairs. Without this, an out-of-scope finding spawns a repair
+// that grows the diff, which the next round's inspectors flag as new inconsistency
+// — the cascade that decommissioned one script and deleted four unrelated files.
+const changedFilesRaw = (await agent(
+  `Run: git -C ${plan.worktree_path} diff --name-only origin/main...HEAD — return one path per line, nothing else.`,
+  { label: 'changed-files', phase: 'Review', model: M.utility }
+) || '')
+const changedFiles = new Set(changedFilesRaw.split('\n').map(s => s.trim()).filter(Boolean))
+// If the diff probe flaked (empty set), do NOT silently drop every finding — fall
+// back to no filtering so a transient git failure can't mask real review findings.
+const cascadeGuardActive = changedFiles.size > 0
+if (!cascadeGuardActive) log('WARNING: could not determine branch diff — cascade guard disabled this run')
 
 // Seed the deferred accumulator from a prior SC run passed via args.
 const deferredFindings = seedDeferred.slice()
@@ -182,7 +220,9 @@ Review the ${lang} changes in worktree ${plan.worktree_path}:
 Focus exclusively on ${lang} files (${extList}).${filesCtx}
 If no matching files were modified, return an empty findings array.
 Classify each finding: blocker | major | minor | nit
-For each finding, assign a confidence score (0–100): how certain are you this is a real issue? Be honest — uncertain or style-preference findings should score low.${deferredCtx}`,
+For each finding, assign a confidence score (0–100): how certain are you this is a real issue? Be honest — uncertain or style-preference findings should score low.${deferredCtx}
+
+${issueScope}${SCOPE_RULE}`,
       {
         label: `inspector:${lang}:r${scAttempts}`,
         phase: 'Review',
@@ -194,7 +234,7 @@ For each finding, assign a confidence score (0–100): how certain are you this 
   })
 
   const specialistInspectors = specialistDefs.map(s => () =>
-    agent(`${s.prompt}\n\nFor each finding, assign a confidence score (0–100). Be honest — uncertain findings should score low.${deferredCtx}`, {
+    agent(`${s.prompt}\n\nFor each finding, assign a confidence score (0–100). Be honest — uncertain findings should score low.${deferredCtx}\n\n${issueScope}${SCOPE_RULE}`, {
       label: `specialist:${s.label}:r${scAttempts}`,
       phase: 'Review',
       schema: FINDINGS_SCHEMA,
@@ -211,8 +251,16 @@ For each finding, assign a confidence score (0–100): how certain are you this 
     .filter((f, i, arr) => arr.findIndex(f2 => f2.file === f.file && f2.summary === f.summary) === i)
 
   const significant = allFindings.filter(f => ['blocker', 'major', 'minor'].includes(f.severity))
-  const actionable  = significant.filter(f => (f.confidence ?? 100) > 50)
+  const actionableRaw = significant.filter(f => (f.confidence ?? 100) > 50)
   const newDeferred = significant.filter(f => (f.confidence ?? 100) <= 50)
+
+  // Cascade guard: only repair findings on files this branch actually changed.
+  const inScope    = cascadeGuardActive ? actionableRaw.filter(f => changedFiles.has(f.file)) : actionableRaw
+  const outOfScope = cascadeGuardActive ? actionableRaw.filter(f => !changedFiles.has(f.file)) : []
+  if (outOfScope.length) {
+    log(`Skipping ${outOfScope.length} finding(s) outside the branch diff: ${outOfScope.map(f => f.file).join(', ')}`)
+  }
+  const actionable = inScope
 
   for (const f of newDeferred) {
     const key = `${f.file}::${f.summary}`
@@ -250,6 +298,12 @@ File: ${finding.file}${finding.line ? `, line ${finding.line}` : ''}
 Severity: ${finding.severity}
 Issue: ${finding.summary}
 ${finding.suggestion ? `Suggestion: ${finding.suggestion}` : ''}
+
+Constraints — stay strictly in scope:
+- Modify ONLY files directly required to fix THIS finding (normally just ${finding.file}).
+- NEVER delete files, remove features, or strip documentation beyond this finding.
+- If a proper fix would require touching files outside issue #${issueNum}'s scope,
+  do NOT do it — return status 'plan_problem' explaining why instead.
 
 Do NOT commit — the Flight Controller will verify.
 Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, files_modified, and summary.`,
