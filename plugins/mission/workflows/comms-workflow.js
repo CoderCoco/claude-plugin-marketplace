@@ -51,6 +51,10 @@ const PR_STATUS_SCHEMA = {
       type: 'object',
       description: 'Maps thread-root comment databaseId (string) → { thread_id: string, is_resolved: boolean, last_author: string }',
     },
+    thread_comments: {
+      type: 'object',
+      description: 'Maps review-thread node id (string) → ordered array of { author, body } for the whole thread conversation',
+    },
     viewer_login: {
       type: 'string',
       description: 'Login of the authenticated gh user (us) — used to detect our own replies',
@@ -154,30 +158,43 @@ const status = await agent(
 
 Run these queries:
 
-1. PR-level comments:
+1. PR-level comments (key off the later of created_at / updated_at so EDITED comments re-surface):
    gh api "repos/${repo}/issues/${prNum}/comments" --paginate \\
      | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
-     | jq '[.[] | select(.created_at > "${lastSeenAt}") | {
+     | jq '[.[] | select((.updated_at // .created_at) > "${lastSeenAt}") | {
          id: (.id | tostring), node_id, author: .user.login, body,
-         url: .html_url, timestamp: .created_at,
+         url: .html_url, timestamp: (.updated_at // .created_at),
          type: "pr_comment", in_reply_to_id: null, file: null, line: null
        }]'
 
-2. Review summary bodies (the top-level body of any review — human or bot):
-   gh api "repos/${repo}/pulls/${prNum}/reviews" --paginate \\
+2. Review summary bodies (the top-level body of any review — human or bot). Fetch via
+   GraphQL and key off lastEditedAt so EDITED review bodies re-surface (the REST reviews
+   endpoint has no updated_at, so an edited review body would otherwise be missed forever):
+   OWNER=$(echo "${repo}" | cut -d/ -f1)
+   REPO_NAME=$(echo "${repo}" | cut -d/ -f2)
+   gh api graphql \\
+     -f query='query($owner:String!,$name:String!,$number:Int!){
+       repository(owner:$owner,name:$name){
+         pullRequest(number:$number){
+           reviews(first:100){nodes{ databaseId author{login} body url submittedAt lastEditedAt }}
+         }
+       }
+     }' \\
+     -f owner="$OWNER" -f name="$REPO_NAME" -F number=${prNum} \\
      | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
-     | jq '[.[] | select((.submitted_at // .created_at) > "${lastSeenAt}" and .body != "" and .body != null) | {
-         id: (.id | tostring), node_id, author: .user.login, body,
-         url: .html_url, timestamp: (.submitted_at // .created_at),
-         type: "review_body", in_reply_to_id: null, file: null, line: null
-       }]'
+     | jq '[.data.repository.pullRequest.reviews.nodes[]
+         | select((.lastEditedAt // .submittedAt) > "${lastSeenAt}" and .body != "" and .body != null) | {
+             id: (.databaseId | tostring), node_id: null, author: (.author.login // ""), body,
+             url: .url, timestamp: (.lastEditedAt // .submittedAt),
+             type: "review_body", in_reply_to_id: null, file: null, line: null
+           }]'
 
-3. Inline review comments:
+3. Inline review comments (key off the later of created_at / updated_at so EDITED comments re-surface):
    gh api "repos/${repo}/pulls/${prNum}/comments" --paginate \\
      | tr -d '\\000-\\010\\013\\014\\016-\\037' \\
-     | jq '[.[] | select(.created_at > "${lastSeenAt}") | {
+     | jq '[.[] | select((.updated_at // .created_at) > "${lastSeenAt}") | {
          id: (.id | tostring), node_id, author: .user.login, body,
-         url: .html_url, timestamp: .created_at,
+         url: .html_url, timestamp: (.updated_at // .created_at),
          type: "inline_comment",
          in_reply_to_id: (.in_reply_to_id | tostring? // null),
          file: .path, line: (.line // .original_line)
@@ -193,6 +210,7 @@ Run these queries:
            reviewThreads(first:100){nodes{
              id isResolved
              root: comments(first:1){nodes{databaseId author{login} body path line}}
+             all: comments(first:100){nodes{author{login} body}}
              last: comments(last:1){nodes{author{login}}}
            }}
          }
@@ -219,6 +237,12 @@ Run these queries:
          last_author: (.last.nodes[0].author.login // "")
        }]'
 
+   # thread_comments: thread_id → ordered conversation [{author, body}], so triage can
+   # read a comment in the context of the whole linked thread, not just one message.
+   echo "$THREADS_JSON" | jq '.data.repository.pullRequest.reviewThreads.nodes |
+     map({key: .id,
+          value: (.all.nodes | map({author: (.author.login // ""), body: .body}))}) | from_entries'
+
 5. PR state, approval, CI, all-threads check, and reviewers who want changes:
    OWNER=$(echo "${repo}" | cut -d/ -f1)
    REPO_NAME=$(echo "${repo}" | cut -d/ -f2)
@@ -244,8 +268,8 @@ Run these queries:
 6. Authenticated user (us): gh api user --jq '.login'  → return as viewer_login
 
 Merge the three comment arrays (queries 1–3), deduplicate by id, sort by timestamp.
-Return max_comment_at as the ISO timestamp of the newest comment (empty string if none).
-Return thread_map and open_threads (query 4) and viewer_login (query 6) as well.`,
+Return max_comment_at as the ISO timestamp of the newest comment activity (max timestamp; empty string if none).
+Return thread_map, open_threads, and thread_comments (query 4) and viewer_login (query 6) as well.`,
   {
     label: 'fetch',
     phase: 'Fetch',
@@ -276,14 +300,16 @@ if (status.all_threads_resolved && status.ci_passing) {
 
 // ── Build the candidate set (deterministic — resolution is NOT an LLM decision) ──
 
-const viewerLogin = status.viewer_login || ''
-const threadMap   = status.thread_map || {}
-const openThreads = status.open_threads || []
+const viewerLogin    = status.viewer_login || ''
+const threadMap      = status.thread_map || {}
+const openThreads    = status.open_threads || []
+const threadComments = status.thread_comments || {}
 
-// Enrich a comment with its thread's resolution state (join by thread-root id).
+// Enrich a comment with its thread's resolution state (join by thread-root id) and
+// the full thread conversation (so triage reads it in context of any linked replies).
 const enrich = (c) => {
   if (c.type !== 'inline_comment') {
-    return { ...c, is_resolved: null, thread_id: null, thread_last_author: null }
+    return { ...c, is_resolved: null, thread_id: null, thread_last_author: null, thread_context: null }
   }
   const t = threadMap[c.in_reply_to_id || c.id] || {}
   return {
@@ -291,6 +317,7 @@ const enrich = (c) => {
     is_resolved:        !!t.is_resolved,
     thread_id:          t.thread_id || null,
     thread_last_author: t.last_author || null,
+    thread_context:     (t.thread_id && threadComments[t.thread_id]) || null,
   }
 }
 
@@ -301,6 +328,7 @@ const openThreadComments = openThreads.map(t => ({
   url: t.url || null, timestamp: '', type: 'inline_comment',
   in_reply_to_id: null, file: t.file || null, line: t.line || null,
   is_resolved: false, thread_id: t.thread_id || null, thread_last_author: t.last_author || null,
+  thread_context: (t.thread_id && threadComments[t.thread_id]) || null,
 }))
 
 // Union of time-windowed comments and open threads, deduped by id; resolved inline
@@ -325,7 +353,11 @@ const triage = await agent(
   `You are CAPCOM for mission issue #${issueNum}, PR #${prNum} in ${repo}. We are "${viewerLogin}".
 
 Each comment below carries is_resolved/thread_id (already resolved threads have been removed —
-everything you see on an inline thread is UNRESOLVED). Categorise each of the ${candidates.length}:
+everything you see on an inline thread is UNRESOLVED). Inline comments also carry thread_context:
+the full ordered conversation on that thread — read each comment in that context, since a reviewer's
+ask is often spread across linked replies. A comment may also be an EDIT of one seen earlier (it
+re-surfaces when its text changes); categorise it on its CURRENT text, not any prior wording.
+Categorise each of the ${candidates.length}:
 ${JSON.stringify(candidates, null, 2)}
 
 Categories:
