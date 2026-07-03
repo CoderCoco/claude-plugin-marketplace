@@ -230,17 +230,28 @@ Return a crew report whose task_name is exactly "${task.name}", plus status, fil
       })
     }
 
-    // ── Flight Controllers (parallel, each with its own spawn-retry budget) ─────
+    // ── Flight Controllers (sequential, each with its own spawn-retry budget) ───
+    // Sequential on purpose: each Flight Controller runs the repo's full quality
+    // gates (test suite, coverage, build), and each such run spawns its own pool
+    // of worker processes. Verifying N tasks in parallel multiplies those pools
+    // and has exhausted host memory before (WSL swap-thrash, hard power-off).
+    // One suite at a time keeps memory bounded; verdicts[i] stays pending[i]'s.
 
     phase('Verify')
-    const verdicts = await parallel(
-      pending.map(task => () => {
-        const report = taskState[task.name].report
-        if (!report) return Promise.resolve(null)
-        const attempt = taskState[task.name].attempts + 1
-        return verdictWithRetry(task, report, attempt)
-      })
-    )
+    const verdicts = []
+    for (const task of pending) {
+      const report = taskState[task.name].report
+      if (!report) { verdicts.push(null); continue }
+      const attempt = taskState[task.name].attempts + 1
+      // parallel() resolved thrown agents to null; keep that contract here so a
+      // single failed verifier degrades to a FAIL-and-retry instead of aborting.
+      try {
+        verdicts.push(await verdictWithRetry(task, report, attempt))
+      } catch (err) {
+        log(`FC:${task.name} verifier threw (${err.message}) — treating as null verdict`)
+        verdicts.push(null)
+      }
+    }
 
     // Same positional guarantee: verdicts[i] is pending[i]'s verdict. The Flight
     // Controller shares the unconstrained task_name schema and can likewise echo
