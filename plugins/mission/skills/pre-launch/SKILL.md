@@ -1,11 +1,11 @@
 ---
 name: pre-launch
-description: Use when the user wants to plan a GitHub issue in the mission workflow, or when /mission dispatches planning. Trigger on "pre-launch <N>", "/pre-launch", or "replan issue N". Dispatches the Flight Director interactively (branch and worktree are created during planning), answers open questions with the user, persists the flight plan to plan.json, and confirms readiness. Never auto-advances — /mission or the user runs /liftoff next.
+description: Use when the user wants to plan a GitHub issue in the mission workflow, or when /mission dispatches planning. Trigger on "pre-launch <N>", "/pre-launch", or "replan issue N". Dispatches the Flight Director (branch and worktree are created during planning), which resolves ordinary ambiguity autonomously and persists the flight plan to plan.json without waiting for confirmation. Only halts — without persisting a plan — when the Flight Director reports a genuine blocker, surfaced in detail so Mission Control's human operator can resolve it before re-running. Never auto-advances — /mission or the user runs /liftoff next.
 ---
 
-# Pre-Launch — Interactive Planning
+# Pre-Launch — Autonomous Planning
 
-Run the Flight Director in the current conversation so open questions can be answered immediately, then persist the flight plan for the phase wrappers.
+Run the Flight Director in the current conversation, let it resolve ordinary ambiguity itself, and persist the flight plan for the phase wrappers without waiting on a confirmation round-trip. Only stop and surface a banner when the Flight Director reports a genuine blocker.
 
 ## Step 1: Parse arguments
 
@@ -51,7 +51,7 @@ rm -f "$STATE_DIR/plan.json" "$STATE_DIR"/*.runid
 
 ## Step 4: Dispatch the Flight Director
 
-Call the **Agent tool** (runs in this conversation so the user can answer questions) with:
+Call the **Agent tool** (runs in this conversation so any blocker is visible immediately) with:
 - `subagent_type`: `"mission:flight-director"`
 - `model`: the value of `MODELS.director`
 - `prompt`: the template below (substitute `ISSUE_NUM` and `REPO`; `<ANSWERS_CTX>` starts empty)
@@ -83,7 +83,11 @@ Steps:
    dependencies all appear earlier in the list — and assign roster names in that listed order,
    so tasks that launch in parallel hold consecutive names.
    Express dependencies by name in depends_on. Each task needs a one-sentence acceptance criterion.
-   If anything is ambiguous, list it in open_questions instead of guessing.<ANSWERS_CTX>
+   Resolve ordinary ambiguity yourself — pick the most conservative, reversible interpretation and
+   record it in that task's `ambiguity_note` field. Only use open_questions for a genuine blocker: something that makes the
+   plan impossible to execute at all (a prerequisite the issue assumes already exists but doesn't,
+   conflicting repo/worktree state, directly contradictory instructions). Do not guess past a
+   genuine blocker, and do not raise open_questions for anything short of one.<ANSWERS_CTX>
 
 Return the full structured plan including issue_title, branch, worktree_path, and tasks.
 ```
@@ -104,11 +108,12 @@ Use this schema for the Agent call:
         "type": "object",
         "required": ["name", "title", "files", "depends_on", "acceptance"],
         "properties": {
-          "name":       { "type": "string" },
-          "title":      { "type": "string" },
-          "files":      { "type": "array", "items": { "type": "string" } },
-          "depends_on": { "type": "array", "items": { "type": "string" } },
-          "acceptance": { "type": "string" }
+          "name":            { "type": "string" },
+          "title":           { "type": "string" },
+          "files":           { "type": "array", "items": { "type": "string" } },
+          "depends_on":      { "type": "array", "items": { "type": "string" } },
+          "acceptance":      { "type": "string" },
+          "ambiguity_note":  { "type": "string", "description": "One-sentence note recording the conservative interpretation chosen when this task involved ordinary ambiguity. Omit or leave empty when nothing was ambiguous." }
         }
       }
     }
@@ -116,21 +121,28 @@ Use this schema for the Agent call:
 }
 ```
 
-### Handle open_questions interactively
+### Handle a genuine blocker
+
+Because the Flight Director only returns `open_questions` for something that makes the plan
+impossible to execute at all (see Step 4), do NOT try to resolve it interactively with
+`AskUserQuestion` and do NOT wait for a response mid-run. A blocker means there is nothing safe
+to guess — surface it, don't stall on it.
 
 If the Flight Director returns a non-empty `open_questions`:
-1. Present them to the user — AskUserQuestion for up to 4; a numbered list beyond that.
-2. Wait for answers.
-3. Re-run the Agent call with `<ANSWERS_CTX>` replaced by:
-   ```
+1. Do NOT persist `plan.json`.
+2. Present the halt using the banner shape in `references/halt-protocol.md`:
+   - Reason: the blocker(s) verbatim, in plain English — concrete enough that the human operator
+     can resolve it in one reply without needing to re-derive context.
+   - Where we are: `"Issue #<N>, planning phase — no plan persisted"`.
+   - Options: `[1]` the most likely path forward (e.g. re-scope, wait on a dependency, supply a
+     missing decision), `[2]` an alternative path if one exists, `[3]` abort mission (always last).
+3. Exit the skill. Do not loop, do not re-dispatch the Flight Director, do not wait for input —
+   the surrounding conversation (or a fresh `/pre-launch <N>` / `/pre-launch <N> --replan` once the
+   blocker is resolved) picks this back up.
 
-   The user has answered your open questions:
-   <user's answers>
-   Proceed with the full plan — do not return any open_questions.
-   ```
-4. Repeat until the plan has no open_questions.
+## Step 5: Present the plan
 
-## Step 5: Present and confirm
+Print the plan for visibility, then continue immediately — do not wait for confirmation:
 
 ```
 Flight plan ready for issue #<N> — <count> task(s) on <branch>:
@@ -140,11 +152,13 @@ Flight plan ready for issue #<N> — <count> task(s) on <branch>:
   Apollo        <title>                                  src/retry.ts
   Borman        <title>                                  src/webhook.ts  [->Apollo]
 
-Ready for liftoff? [Y/n]
+Proceeding to persist the plan — reply with feedback any time before /liftoff starts to revise it.
 ```
 
-- Feedback / `n` → re-dispatch the Flight Director (Step 4) with the user's feedback appended as revision instructions, then re-confirm (Step 5) — do NOT write plan.json until the user confirms.
-- `y` → proceed to Step 6.
+If the user gives feedback in reply before the plan is acted on, re-dispatch the Flight Director
+(Step 4) with the feedback appended as revision instructions, then re-present (Step 5). Otherwise
+proceed straight to Step 6 — the plan is a starting point the user can still redirect, not a gate
+to wait behind.
 
 ## Step 6: Persist the plan
 

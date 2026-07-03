@@ -1,11 +1,11 @@
 ---
 name: systems-check
-description: Use when the user wants the mission code review phase, or when /mission dispatches it. Trigger on "systems-check <N>" or "/systems-check". Thin wrapper around systems-check-workflow.js — language-bucketed Systems Inspectors review the full branch diff, repair Astronauts fix actionable findings; on exhausted rounds asks the user whether to continue, skip, or stop. Requires a plan from /pre-launch.
+description: Use when the user wants the mission code review phase, or when /mission dispatches it. Trigger on "systems-check <N>" or "/systems-check". Thin wrapper around systems-check-workflow.js — language-bucketed Systems Inspectors review the full branch diff, repair Astronauts fix actionable findings; on exhausted rounds gives repair one bounded extra attempt autonomously, then defers remaining findings and continues without waiting on the user. Requires a plan from /pre-launch.
 ---
 
 # Systems Check — Review and Repair
 
-Run the systems-check workflow, looping interactively when repair rounds are exhausted.
+Run the systems-check workflow, deciding autonomously (no user prompt) when repair rounds are exhausted — one bounded extra attempt for `blocker`/`major` findings, otherwise defer and continue.
 
 ## Step 1: Locate the plan
 
@@ -39,7 +39,8 @@ Call `EnterWorktree` with `path: $WORKTREE_PATH`.
 
 ## Step 4: Inspection loop
 
-Initialize: `SC_DEFERRED = []` (accumulates low-confidence findings), `SC_MAX_ROUNDS = 3`.
+Initialize: `SC_DEFERRED = []` (accumulates low-confidence findings), `SC_MAX_ROUNDS = 3`,
+`SC_EXTENSION_USED = false`.
 
 **Loop:**
 
@@ -73,10 +74,20 @@ Initialize: `SC_DEFERRED = []` (accumulates low-confidence findings), `SC_MAX_RO
 
 4. If `result.status === 'exhausted'`:
    - Summarise `result.open_findings`: `[<severity>] <file>:<line> — <summary> (<confidence>% confident)`
-   - AskUserQuestion: **Try more rounds** / **Skip and continue** / **Stop**.
-   - Try more rounds → ask how many (default 3), set `SC_MAX_ROUNDS`, append `result.low_confidence_findings` into `SC_DEFERRED` (dedup by file+summary), loop.
-   - Skip and continue → break; note the open findings need manual attention.
-   - Stop → report the open findings and exit without advancing.
+   - Append `result.low_confidence_findings` into `SC_DEFERRED` (dedup by file+summary).
+   - Decide autonomously — no `AskUserQuestion`, no waiting:
+     - If `SC_EXTENSION_USED` is `false` AND any open finding has severity `blocker` or `major`:
+       give repair one bounded extra attempt. Set `SC_EXTENSION_USED = true`, `SC_MAX_ROUNDS = 3`,
+       and loop.
+     - Otherwise (the extension was already used, or every remaining finding is `minor`/`nit`):
+       append `result.open_findings` into `SC_DEFERRED` (dedup by file+summary) and break — do not
+       loop again.
+
+   This mirrors the halt-protocol philosophy (references/halt-protocol.md): exhaustion on
+   ordinary review findings is not a genuine blocker with no safe default — deferring `minor`/`nit`
+   items and giving `blocker`/`major` items exactly one extra bounded attempt is the reasonable
+   default. It only becomes a real halt (Step 4.1's thrown-error path) when the workflow itself
+   cannot run at all.
 
 ## Step 5: Report
 
@@ -85,8 +96,9 @@ Systems check complete for issue #<N>.
 Next: /docking <N>  (or /mission <N> drives it automatically)
 ```
 
-If the final result carried `low_confidence_findings`, list them:
+If `SC_DEFERRED` is non-empty (low-confidence findings, plus anything deferred by the autonomous
+exhaustion decision in Step 4), list it:
 ```
-Low-confidence findings not auto-fixed (<N>) — review manually:
+Findings not auto-fixed (<N>) — review manually:
   [<severity>] <file>:<line> — <summary> (<confidence>% confident)
 ```

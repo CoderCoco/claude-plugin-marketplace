@@ -1,6 +1,6 @@
 export const meta = {
   name: 'systems-check-workflow',
-  description: 'Review the full diff with language-bucketed inspectors and repair actionable findings. Returns status so the skill can ask the user what to do if rounds are exhausted.',
+  description: 'Review the full diff with language-bucketed inspectors and repair actionable findings. Returns status so the skill can decide autonomously — one bounded extra attempt, then defer — if rounds are exhausted.',
   phases: [
     { title: 'Review', detail: 'Scout diff, spawn language inspectors and specialists' },
     { title: 'Fix',    detail: 'Repair Astronauts address actionable findings; Flight Controllers verify' },

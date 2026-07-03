@@ -67,7 +67,7 @@ Invoke the **Skill tool** with `skill: "mission:liftoff"` and args `"<ISSUE_NUM>
 
 ## Step 6: Review
 
-Invoke the **Skill tool** with `skill: "mission:systems-check"` and args `"<ISSUE_NUM>"` plus any `--models …` flags. If the user chose **Stop** during its exhaustion prompt, end the mission here and report what remains open.
+Invoke the **Skill tool** with `skill: "mission:systems-check"` and args `"<ISSUE_NUM>"` plus any `--models …` flags. It resolves exhausted rounds autonomously (one bounded extra attempt, then defers remaining findings) and always returns rather than blocking — proceed to Step 7 once it returns, and relay any deferred findings in the final report. Only stop here if systems-check itself halted via the halt-protocol banner (a genuine mechanical failure, not a judgment call).
 
 ## Step 7: Open the PR
 
@@ -84,4 +84,4 @@ Mission complete!
 Run /comms <pr_number> when PR reviews arrive.
 ```
 
-Relay any low-confidence or user-skipped findings the systems-check phase reported.
+Relay any low-confidence, user-skipped, or deferred findings the systems-check phase reported.

@@ -2,6 +2,13 @@
 
 When a phase cannot continue autonomously, print this exact shape and exit.
 
+Reach for this ONLY when no safe autonomous default exists — a genuine hard blocker (a missing
+prerequisite, a mechanical failure like a thrown error or push conflict, conflicting repo state,
+directly contradictory instructions). Ordinary ambiguity is not a reason to halt: a phase should
+resolve it with its own best judgment and keep going. When you do halt, the Reason must name the
+specific fact, decision, or fix the human operator needs to supply — detailed enough to resolve
+in one reply — not just a description of what went wrong.
+
 ```
 🚨 ABORT SEQUENCE — <phase-name> halted
 
