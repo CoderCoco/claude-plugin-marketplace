@@ -55,7 +55,21 @@ echo "<runId>" > "$STATE_DIR/liftoff.runid"
 
 If the workflow throws, present the error using the banner shape in `references/halt-protocol.md` — reason from the error message, where-we-are = "issue #N, liftoff", options: [1] fix the stated problem and re-run `/liftoff <N>` (resumes from the saved runId), [2] `/pre-launch <N> --replan` if the plan itself is wrong.
 
-## Step 5: Report
+## Step 5: Reap test-runner orphans
+
+Run this after the workflow returns — on success AND on error. A killed agent shell (e.g. a Bash-tool timeout firing mid-test-run) strands the runner's fork workers as orphans that keep consuming memory long after the workflow ends.
+
+```bash
+for pid in $(pgrep -f '[v]itest|[v]ite-node|[p]laywright|[j]est' 2>/dev/null); do
+  case "$(readlink /proc/$pid/cwd 2>/dev/null)" in
+    "$WORKTREE_PATH"*) kill "$pid" 2>/dev/null && echo "Reaped orphaned test process $pid" ;;
+  esac
+done
+```
+
+Only processes whose working directory is inside this mission's worktree are killed — test runs belonging to other sessions or repos are untouched. (No-op on systems without /proc.)
+
+## Step 6: Report
 
 ```
 All tasks committed — liftoff complete for issue #<N>.

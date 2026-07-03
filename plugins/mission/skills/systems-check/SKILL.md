@@ -59,9 +59,19 @@ Initialize: `SC_DEFERRED = []` (accumulates low-confidence findings), `SC_MAX_RO
 
    If the workflow throws, present the error using the banner shape in references/halt-protocol.md — options: [1] fix the stated problem and re-run /systems-check <N>, [2] /pre-launch <N> --replan if the plan itself is wrong.
 
-2. If `result.status === 'clean'`: break.
+2. Reap test-runner orphans — run after every workflow return (clean, exhausted, or thrown). A killed agent shell (e.g. a Bash-tool timeout firing mid-test-run) strands the runner's fork workers as memory-eating orphans:
+   ```bash
+   for pid in $(pgrep -f '[v]itest|[v]ite-node|[p]laywright|[j]est' 2>/dev/null); do
+     case "$(readlink /proc/$pid/cwd 2>/dev/null)" in
+       "$WORKTREE_PATH"*) kill "$pid" 2>/dev/null && echo "Reaped orphaned test process $pid" ;;
+     esac
+   done
+   ```
+   Only processes rooted in this mission's worktree are killed; other sessions are untouched.
 
-3. If `result.status === 'exhausted'`:
+3. If `result.status === 'clean'`: break.
+
+4. If `result.status === 'exhausted'`:
    - Summarise `result.open_findings`: `[<severity>] <file>:<line> — <summary> (<confidence>% confident)`
    - AskUserQuestion: **Try more rounds** / **Skip and continue** / **Stop**.
    - Try more rounds → ask how many (default 3), set `SC_MAX_ROUNDS`, append `result.low_confidence_findings` into `SC_DEFERRED` (dedup by file+summary), loop.
