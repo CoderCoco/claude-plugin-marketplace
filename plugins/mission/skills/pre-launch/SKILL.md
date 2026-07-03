@@ -84,7 +84,7 @@ Steps:
    so tasks that launch in parallel hold consecutive names.
    Express dependencies by name in depends_on. Each task needs a one-sentence acceptance criterion.
    Resolve ordinary ambiguity yourself — pick the most conservative, reversible interpretation and
-   note it on the task. Only use open_questions for a genuine blocker: something that makes the
+   record it in that task's `ambiguity_note` field. Only use open_questions for a genuine blocker: something that makes the
    plan impossible to execute at all (a prerequisite the issue assumes already exists but doesn't,
    conflicting repo/worktree state, directly contradictory instructions). Do not guess past a
    genuine blocker, and do not raise open_questions for anything short of one.<ANSWERS_CTX>
@@ -108,11 +108,12 @@ Use this schema for the Agent call:
         "type": "object",
         "required": ["name", "title", "files", "depends_on", "acceptance"],
         "properties": {
-          "name":       { "type": "string" },
-          "title":      { "type": "string" },
-          "files":      { "type": "array", "items": { "type": "string" } },
-          "depends_on": { "type": "array", "items": { "type": "string" } },
-          "acceptance": { "type": "string" }
+          "name":            { "type": "string" },
+          "title":           { "type": "string" },
+          "files":           { "type": "array", "items": { "type": "string" } },
+          "depends_on":      { "type": "array", "items": { "type": "string" } },
+          "acceptance":      { "type": "string" },
+          "ambiguity_note":  { "type": "string", "description": "One-sentence note recording the conservative interpretation chosen when this task involved ordinary ambiguity. Omit or leave empty when nothing was ambiguous." }
         }
       }
     }
