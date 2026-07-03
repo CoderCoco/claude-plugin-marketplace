@@ -316,31 +316,40 @@ Return a crew report with task_name="${finding.summary.slice(0, 40)}", status, f
     )
   ))
 
-  // ── Repair Flight Controllers (parallel) ───────────────────────────────────
-
-  // Intentionally not filtering so indices stay aligned with actionable[].
-  const repairVerdicts = await parallel(
-    repairs.map((repair, idx) => () =>
-      repair
-        ? agent(
-            `You are the Flight Controller verifying a repair for mission issue #${issueNum}.
+  // ── Repair Flight Controllers (sequential) ─────────────────────────────────
+  // Sequential on purpose: each Flight Controller runs heavy quality gates
+  // (full test suite / coverage), each spawning its own worker-process pool.
+  // Verifying N repairs in parallel multiplies those pools and has exhausted
+  // host memory before (WSL swap-thrash, hard power-off). Push order keeps
+  // repairVerdicts[idx] aligned with actionable[idx]; nulls are not filtered.
+  const repairVerdicts = []
+  for (let idx = 0; idx < repairs.length; idx++) {
+    const repair = repairs[idx]
+    if (!repair) { repairVerdicts.push(null); continue }
+    // parallel() resolved thrown agents to null; keep that contract here so a
+    // single failed verifier skips this repair instead of aborting the round.
+    try {
+      repairVerdicts.push(await agent(
+        `You are the Flight Controller verifying a repair for mission issue #${issueNum}.
 
 Finding: ${JSON.stringify(actionable[idx])}
 Crew report: ${JSON.stringify(repair)}
 Worktree: ${plan.worktree_path}
 
 Run checks as appropriate. PASS only if the finding is resolved and all checks pass. FAIL with fixes_needed otherwise.`,
-            {
-              label: `fc-repair:r${scAttempts}:${idx}`,
-              phase: 'Fix',
-              schema: VERDICT_SCHEMA,
-              agentType: 'mission:flight-controller',
-              model: M.controller,
-            }
-          )
-        : Promise.resolve(null)
-    )
-  )
+        {
+          label: `fc-repair:r${scAttempts}:${idx}`,
+          phase: 'Fix',
+          schema: VERDICT_SCHEMA,
+          agentType: 'mission:flight-controller',
+          model: M.controller,
+        }
+      ))
+    } catch (err) {
+      log(`fc-repair:r${scAttempts}:${idx} verifier threw (${err.message}) — treating as null verdict`)
+      repairVerdicts.push(null)
+    }
+  }
 
   // ── Commit PASSed repairs (sequential) ────────────────────────────────────
 
