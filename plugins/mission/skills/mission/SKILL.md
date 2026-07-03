@@ -84,4 +84,4 @@ Mission complete!
 Run /comms <pr_number> when PR reviews arrive.
 ```
 
-Relay any low-confidence or user-skipped findings the systems-check phase reported.
+Relay any low-confidence, user-skipped, or deferred findings the systems-check phase reported.
