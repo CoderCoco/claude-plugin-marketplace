@@ -5,7 +5,7 @@ description: Use when the mission PR has review comments to address. Runs a sing
 
 # /comms — PR Comment Processor
 
-Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, respond to reviewers, re-request review. Saves `last_seen_at` so each invocation only processes truly new comments. For automatic polling, use `/loop 5m /comms <PR>`.
+Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, decline suggestions with reasoning, re-request review. Every thread is driven to a conclusion: fixed, answered, or reasoned-decline — each of which resolves the thread. Anything that genuinely needs a human decision is escalated silently in the report; the workflow never posts placeholder replies like "we're tracking this" or "leaving the thread open for now". Saves `last_seen_at` so each invocation only processes truly new comments. For automatic polling, use `/loop 5m /comms <PR>`.
 
 ## Step 1: Parse arguments
 
@@ -199,14 +199,16 @@ All threads resolved and CI green — ready to merge.
 Pass complete for PR #<pr_number>:
   Fixed: <items_fixed> comment(s)
   Replied: <items_replied> reply/replies (questions + acknowledgements)
+  Declined: <items_declined> suggestion(s) (reasoned reply posted, thread resolved)
   Last seen: <last_seen_at>
 ```
 
-If `result.open_items` is non-empty, list every unresolved thread / comment still
-needing attention (each entry has `author`, `path`, `summary`):
+If `result.open_items` is non-empty, list every escalated item — these received NO
+reply on the PR (deliberately: a placeholder reply is worse than silence) and need
+your decision (each entry has `author`, `path`, `summary`, `reason`):
 ```
-Still open — needs manual attention:
-  @<author> <path>: "<summary>"
+Escalated — needs your decision (no reply was posted):
+  @<author> <path>: "<summary>" — <reason>
   …
 ```
 
