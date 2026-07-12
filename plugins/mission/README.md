@@ -28,7 +28,9 @@ where you left off.
 /systems-check <N>       Review: polyglot inspectors + auto-repair
 /docking <N>             PR: push branch, open pull request
 /comms <PR>              Handle PR review comments — takes the PR number, not the issue
-                         (single pass; loop with /loop 5m /comms <PR>)
+                         (each thread ends in fix / answer / reasoned decline, or is
+                          escalated to you in the report — no reply is posted for
+                          escalations; single pass; loop with /loop 5m /comms <PR>)
 
 # Configuration & meta
 /mission:setup           Interactive model configuration
@@ -43,7 +45,7 @@ Each crew role's model is configurable. Resolution: `--models` flag →
 | Role | Used by | Default |
 |---|---|---|
 | `director` | Flight Director (planning) | `fable` |
-| `inspector` | Systems Inspectors (review) | `fable` |
+| `inspector` | Systems Inspectors (review + comms judgment) | `fable` |
 | `astronaut` | Build agents | `sonnet` |
 | `controller` | Flight Controllers (verification) | `sonnet` |
 | `capcom` | Comms fetch + triage | `sonnet` |
