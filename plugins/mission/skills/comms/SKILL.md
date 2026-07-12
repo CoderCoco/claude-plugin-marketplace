@@ -5,7 +5,7 @@ description: Use when the mission PR has review comments to address. Runs a sing
 
 # /comms — PR Comment Processor
 
-Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, decline suggestions with reasoning, re-request review. Every thread is driven to a conclusion: fixed, answered, or reasoned-decline — each of which resolves the thread. Anything that genuinely needs a human decision is escalated silently in the report; the workflow never posts placeholder replies like "we're tracking this" or "leaving the thread open for now". Saves `last_seen_at` so each invocation only processes truly new comments. For automatic polling, use `/loop 5m /comms <PR>`.
+Process all new PR comments in one pass — fetch, triage, fix actionable ones, reply to questions, decline suggestions with reasoning, re-request review. Each thread ends in exactly one of four outcomes: **fixed**, **answered**, **reasoned-decline** (all three resolve the thread), or **escalated** — items needing a human decision (or whose fix failed its bounded retry) are surfaced in the report with a reason and receive NO reply on the PR; the workflow never posts placeholder replies like "we're tracking this" or "leaving the thread open for now". Saves `last_seen_at` plus the escalated-thread ids so each invocation only processes truly new comments and never re-attempts a settled thread until a reviewer adds new activity. For automatic polling, use `/loop 5m /comms <PR>`.
 
 ## Step 1: Parse arguments
 
@@ -141,7 +141,7 @@ exit 0
 
 If `$FLAG == "--abandon"`:
 
-Ask: "This will clear the last-seen timestamp for issue #${ISSUE_NUM}. Type `yes` to confirm."
+Ask: "This will clear the last-seen timestamp and settled-thread history for issue #${ISSUE_NUM} (previously escalated threads will be reconsidered from scratch). Type `yes` to confirm."
 
 On `yes`:
 ```bash
@@ -150,12 +150,21 @@ echo "Comms state cleared for issue #${ISSUE_NUM}."
 exit 0
 ```
 
-## Step 5: Load last-seen timestamp
+## Step 5: Load last-seen timestamp and settled threads
 
 ```bash
 LAST_SEEN_AT="1970-01-01T00:00:00Z"
-[ -f "$STATE_FILE" ] && LAST_SEEN_AT=$(jq -r '.last_seen_at // "1970-01-01T00:00:00Z"' "$STATE_FILE")
+SETTLED_IDS="[]"
+if [ -f "$STATE_FILE" ]; then
+  LAST_SEEN_AT=$(jq -r '.last_seen_at // "1970-01-01T00:00:00Z"' "$STATE_FILE")
+  SETTLED_IDS=$(jq -c '.settled_ids // []' "$STATE_FILE")
+fi
 ```
+
+`settled_ids` are thread-root comment ids the workflow escalated on a prior pass
+(fix failed its bounded retry, or the item needs a human decision). Passing them back
+keeps those threads out of triage until a reviewer adds new activity, so the one-retry
+limit holds across `/loop` invocations.
 
 ## Step 6: Invoke the comms workflow (single pass)
 
@@ -170,15 +179,16 @@ Call the Workflow tool with:
     branch:        "<BRANCH>",
     worktree_path: "<WORKTREE_PATH>",
     last_seen_at:  "<LAST_SEEN_AT>",
+    settled_ids:   <SETTLED_IDS as a JSON array, not a string>,
     models:        <MODELS>,
     plugin_root:   "<value of $CLAUDE_PLUGIN_ROOT>"
   }
 
 **Do not pass `resumeFromRunId`** — each comms run is a fresh single-pass invocation.
 
-Save the new `last_seen_at` from the result immediately:
+Save the new `last_seen_at` and `settled_ids` from the result immediately:
 ```bash
-echo "{\"last_seen_at\":\"<result.last_seen_at>\"}" > "$STATE_FILE"
+echo "{\"last_seen_at\":\"<result.last_seen_at>\",\"settled_ids\":<result.settled_ids as JSON array>}" > "$STATE_FILE"
 ```
 
 ## Step 7: Report result
@@ -206,7 +216,7 @@ Pass complete for PR #<pr_number>:
 If `result.open_items` is non-empty, list every escalated item — these received NO
 reply on the PR (deliberately: a placeholder reply is worse than silence) and need
 your decision (each entry has `author`, `path`, `summary`, `reason`):
-```
+```text
 Escalated — needs your decision (no reply was posted):
   @<author> <path>: "<summary>" — <reason>
   …

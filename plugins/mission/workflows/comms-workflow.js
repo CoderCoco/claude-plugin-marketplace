@@ -102,6 +102,16 @@ const TRIAGE_SCHEMA = {
           fix_hint:       { type: 'string', description: 'For actionable: what needs to change' },
           reply_draft:    { type: 'string', description: 'For question/acknowledge/decline: the reply to post — must carry substance (an answer, a confirmation, or a specific reason), never a placeholder' },
         },
+        allOf: [
+          {
+            if:   { properties: { category: { const: 'actionable' } } },
+            then: { required: ['fix_hint'], properties: { fix_hint: { type: 'string', minLength: 1 } } },
+          },
+          {
+            if:   { properties: { category: { enum: ['question', 'acknowledge', 'decline'] } } },
+            then: { required: ['reply_draft'], properties: { reply_draft: { type: 'string', minLength: 1 } } },
+          },
+        ],
       },
     },
   },
@@ -138,6 +148,16 @@ const JUDGMENT_SCHEMA = {
     fix_hint:    { type: 'string', description: 'For actionable: what needs to change (one sentence)' },
     reply_draft: { type: 'string', description: 'For decline: a specific reasoned decline reply — never a placeholder' },
   },
+  allOf: [
+    {
+      if:   { properties: { decision: { const: 'actionable' } } },
+      then: { required: ['fix_hint'], properties: { fix_hint: { type: 'string', minLength: 1 } } },
+    },
+    {
+      if:   { properties: { decision: { const: 'decline' } } },
+      then: { required: ['reply_draft'], properties: { reply_draft: { type: 'string', minLength: 1 } } },
+    },
+  ],
 }
 
 // ── Args ───────────────────────────────────────────────────────────────────────
@@ -150,6 +170,11 @@ const prNum        = _a.pr_number
 const branch       = _a.branch
 const worktreePath = _a.worktree_path
 const lastSeenAt   = _a.last_seen_at || '1970-01-01T00:00:00Z'
+// Thread-root comment ids escalated on a PRIOR pass (persisted by the skill in
+// comms-state.json). These already consumed their bounded fix retry or need a human
+// decision — skip them until a reviewer adds new activity, so the one-retry limit
+// holds across /loop invocations instead of resetting every pass.
+const settledIds   = new Set((_a.settled_ids || []).map(String))
 
 if (!issueNum || !repo || !prNum || !branch || !worktreePath) {
   throw new Error('args must include issue_number, repo, pr_number, branch, worktree_path')
@@ -291,7 +316,7 @@ Return thread_map, open_threads, and thread_comments (query 4) and viewer_login 
 )
 
 if (!status) {
-  return { status: 'fetch_failed', last_seen_at: lastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [] }
+  return { status: 'fetch_failed', last_seen_at: lastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [], settled_ids: [...settledIds] }
 }
 
 const newLastSeenAt = (status.max_comment_at && status.max_comment_at > lastSeenAt)
@@ -302,12 +327,12 @@ const newLastSeenAt = (status.max_comment_at && status.max_comment_at > lastSeen
 
 if (status.merged) {
   log('PR merged — comms complete')
-  return { status: 'merged', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [] }
+  return { status: 'merged', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [], settled_ids: [] }
 }
 
 if (status.all_threads_resolved && status.ci_passing) {
   log('All threads resolved and CI green')
-  return { status: 'resolved', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [] }
+  return { status: 'resolved', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [], settled_ids: [] }
 }
 
 // ── Build the candidate set (deterministic — resolution is NOT an LLM decision) ──
@@ -343,16 +368,33 @@ const openThreadComments = openThreads.map(t => ({
   thread_context: (t.thread_id && threadComments[t.thread_id]) || null,
 }))
 
+// Thread roots with NEW activity this pass — a settled thread is only reconsidered
+// when a reviewer has added a comment since we last looked at it.
+const touchedRoots = new Set(
+  status.new_comments
+    .filter(c => c.type === 'inline_comment')
+    .map(c => String(c.in_reply_to_id || c.id))
+)
+// Settled ids that stay settled (no new activity) — carried forward in the result so
+// the skill keeps persisting them.
+const stillSettled = [...settledIds].filter(id => !touchedRoots.has(id))
+
 // Union of time-windowed comments and open threads, deduped by id; resolved inline
-// threads never reach triage.
+// threads never reach triage, and neither do settled threads without new activity.
 const byId = {}
 for (const c of status.new_comments.map(enrich)) byId[c.id] = c
 for (const c of openThreadComments) if (!byId[c.id]) byId[c.id] = c
-const candidates = Object.values(byId).filter(c => !(c.type === 'inline_comment' && c.is_resolved))
+const candidates = Object.values(byId)
+  .filter(c => !(c.type === 'inline_comment' && c.is_resolved))
+  .filter(c => !(settledIds.has(String(c.id)) && !touchedRoots.has(String(c.id))))
+
+if (stillSettled.length > 0) {
+  log(`${stillSettled.length} previously-escalated thread(s) skipped (no new activity)`)
+}
 
 if (candidates.length === 0) {
   log('No actionable comments or open threads this pass')
-  return { status: 'pending', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [] }
+  return { status: 'pending', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [], settled_ids: stillSettled }
 }
 
 log(`${candidates.length} comment(s)/open thread(s) — triaging`)
@@ -401,7 +443,7 @@ open for now": a placeholder reply is worse than no reply.`,
 )
 
 if (!triage) {
-  return { status: 'triage_failed', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [] }
+  return { status: 'triage_failed', last_seen_at: newLastSeenAt, items_fixed: 0, items_replied: 0, items_declined: 0, open_items: [], settled_ids: stillSettled }
 }
 
 const actionable   = triage.comments.filter(c => c.category === 'actionable')
@@ -423,8 +465,11 @@ ignored.forEach(c => log(`Ignored ${c.type} by ${c.author}: "${c.body_summary ||
 let itemsFixed = 0
 let itemsReplied = 0
 let itemsDeclined = 0
-const repliedIds  = new Set()   // comment ids we replied to this pass (anti double-reply)
-const resolvedIds = new Set()   // thread-root ids we resolved this pass
+const repliedIds        = new Set()   // comment ids we replied to this pass (anti double-reply)
+const resolvedIds       = new Set()   // comment ids whose thread we resolved this pass
+const resolvedThreadIds = new Set()   // GraphQL thread node ids resolved this pass — the
+                                      // authoritative key: a thread can enter the candidate
+                                      // set under more than one comment id (root + reply)
 // Items that could not be driven to a conclusion this pass. Each carries a concrete
 // reason and is surfaced to the operator — NO reply is posted for these (a placeholder
 // reply is worse than silence: it reads as noise and baits bot reviewers into more replies).
@@ -657,6 +702,7 @@ Return the commit SHA.`,
           { label: `resolve:${comment.id}`, phase: 'Downlink', model: M.utility }
         )
         resolvedIds.add(comment.id)
+        resolvedThreadIds.add(tid)
       }
     }
 
@@ -702,10 +748,33 @@ const needsDownlink = questions.some(q => q.reply_draft) || acknowledged.some(a 
   || declined.some(d => d.reply_draft)
 if (needsDownlink) phase('Downlink')
 
+// Resolve a review thread without posting anything.
+const resolveThread = async (c, tid) => {
+  await agent(
+    `Resolve this review thread:
+  gh api graphql \\
+    -f query='mutation($tid:ID!){resolveReviewThread(input:{threadId:$tid}){thread{isResolved}}}' \\
+    -f tid="${tid}"`,
+    { label: `resolve:${c.id}`, phase: 'Downlink', model: M.utility }
+  )
+  resolvedIds.add(c.id)
+  resolvedThreadIds.add(tid)
+}
+
 // Post a reply to a comment/thread, optionally resolving it. Records tracking sets.
+// If WE are the thread's most recent commenter, the reply was already posted on a
+// prior pass that died before saving state — resolve the thread without re-posting
+// instead of duplicating the comment.
 const replyTo = async (c, body, { resolve }) => {
-  const isInline = ((candById[c.id] || c).type || c.type) === 'inline_comment'
+  const enriched = candById[c.id] || {}
+  const isInline = (enriched.type || c.type) === 'inline_comment'
   const tid = isInline ? threadIdOf(c.id) : null
+  if (isInline && tid && viewerLogin && enriched.thread_last_author === viewerLogin) {
+    log(`Already replied to ${c.author}'s thread on a prior pass — resolving without re-posting`)
+    if (resolve) await resolveThread(c, tid)
+    repliedIds.add(c.id)
+    return
+  }
   await agent(
     `Post a reply to ${c.author}'s ${isInline ? 'inline' : 'PR'} comment on PR #${prNum} in ${repo}.
 
@@ -721,7 +790,7 @@ ${isInline
     { label: `reply:${c.id}`, phase: 'Downlink', model: M.utility }
   )
   repliedIds.add(c.id)
-  if (resolve && tid) resolvedIds.add(c.id)
+  if (resolve && tid) { resolvedIds.add(c.id); resolvedThreadIds.add(tid) }
 }
 
 for (const q of questions) {
@@ -751,17 +820,22 @@ const triageById = {}
 triage.comments.forEach(t => { triageById[t.id] = t })
 const openItems = []
 const seenOpen = new Set()
+// Deduplicate by thread id where one exists — the same thread can enter the candidate
+// set under multiple comment ids (root + reply), and resolution operates on threads.
+const openKey = (c) => (candById[c.id] || {}).thread_id || c.thread_id || c.id
 const addOpen = (c, reason) => {
-  if (!c || seenOpen.has(c.id)) return
-  seenOpen.add(c.id)
+  if (!c || seenOpen.has(openKey(c))) return
+  seenOpen.add(openKey(c))
   const enriched = candById[c.id] || {}
   const summary = c.body_summary || (triageById[c.id] && triageById[c.id].body_summary) || (c.body || enriched.body || '').slice(0, 140)
   openItems.push({ id: c.id, author: c.author, path: c.file || enriched.file || null, summary, reason })
 }
 escalations.forEach(e => addOpen(e.comment, e.reason))
-// Catch-all: any unresolved inline thread that slipped through every path above.
+// Catch-all: any unresolved inline thread that slipped through every path above —
+// keyed by thread id, so a thread resolved via a different comment id is excluded.
 candidates
-  .filter(c => c.type === 'inline_comment' && c.thread_id && !resolvedIds.has(c.id))
+  .filter(c => c.type === 'inline_comment' && c.thread_id
+    && !resolvedThreadIds.has(c.thread_id) && !resolvedIds.has(c.id))
   .forEach(c => addOpen(c, 'unconcluded this pass'))
 
 return {
@@ -773,4 +847,7 @@ return {
   items_replied:  itemsReplied,
   items_declined: itemsDeclined,
   open_items:     openItems,
+  // Escalated threads stay settled across passes (persisted by the skill) so the
+  // bounded retry doesn't reset every /loop invocation.
+  settled_ids:    [...new Set([...stillSettled, ...openItems.map(i => String(i.id))])],
 }
