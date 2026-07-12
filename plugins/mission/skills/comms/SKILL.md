@@ -157,7 +157,8 @@ LAST_SEEN_AT="1970-01-01T00:00:00Z"
 SETTLED_IDS="[]"
 if [ -f "$STATE_FILE" ]; then
   LAST_SEEN_AT=$(jq -r '.last_seen_at // "1970-01-01T00:00:00Z"' "$STATE_FILE")
-  SETTLED_IDS=$(jq -c '.settled_ids // []' "$STATE_FILE")
+  # Guard against a corrupted state file: anything that isn't an array becomes []
+  SETTLED_IDS=$(jq -c '(.settled_ids // []) | if type == "array" then . else [] end' "$STATE_FILE" 2>/dev/null || echo "[]")
 fi
 ```
 
@@ -186,9 +187,12 @@ Call the Workflow tool with:
 
 **Do not pass `resumeFromRunId`** — each comms run is a fresh single-pass invocation.
 
-Save the new `last_seen_at` and `settled_ids` from the result immediately:
+Save the new `last_seen_at` and `settled_ids` from the result immediately. Write
+atomically (temp file + rename) — a direct redirect truncates the file first, so an
+interruption mid-write would lose the state and reconsider settled threads:
 ```bash
-echo "{\"last_seen_at\":\"<result.last_seen_at>\",\"settled_ids\":<result.settled_ids as JSON array>}" > "$STATE_FILE"
+printf '{"last_seen_at":"%s","settled_ids":%s}' "<result.last_seen_at>" '<result.settled_ids as JSON array>' > "$STATE_FILE.tmp" \
+  && mv "$STATE_FILE.tmp" "$STATE_FILE"
 ```
 
 ## Step 7: Report result

@@ -174,7 +174,9 @@ const lastSeenAt   = _a.last_seen_at || '1970-01-01T00:00:00Z'
 // comms-state.json). These already consumed their bounded fix retry or need a human
 // decision — skip them until a reviewer adds new activity, so the one-retry limit
 // holds across /loop invocations instead of resetting every pass.
-const settledIds   = new Set((_a.settled_ids || []).map(String))
+// A corrupted state file can surface as a string/object — normalize anything that
+// isn't an array to [] (fail open to re-triaging) rather than throwing on .map.
+const settledIds   = new Set(Array.isArray(_a.settled_ids) ? _a.settled_ids.map(String) : [])
 
 if (!issueNum || !repo || !prNum || !branch || !worktreePath) {
   throw new Error('args must include issue_number, repo, pr_number, branch, worktree_path')
@@ -848,6 +850,8 @@ return {
   items_declined: itemsDeclined,
   open_items:     openItems,
   // Escalated threads stay settled across passes (persisted by the skill) so the
-  // bounded retry doesn't reset every /loop invocation.
-  settled_ids:    [...new Set([...stillSettled, ...openItems.map(i => String(i.id))])],
+  // bounded retry doesn't reset every /loop invocation. Normalize reply ids to their
+  // thread-ROOT id — the next pass's candidate filter keys on the root (open_threads
+  // entries carry the root id), so persisting a reply id would never match.
+  settled_ids:    [...new Set([...stillSettled, ...openItems.map(i => String((candById[i.id] || {}).in_reply_to_id || i.id))])],
 }
