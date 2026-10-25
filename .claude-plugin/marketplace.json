@@ -8,37 +8,26 @@
     {
       "name": "issue-flow",
       "source": "./plugins/issue-flow",
-      "description": "Manage the full GitHub issue lifecycle \u2014 from picking up an issue through branch setup, implementation, and raising a PR. Includes /swarm (agent-driven) and /swarm-exec (harness-driven) agentic flows.",
+      "description": "Manage the full GitHub issue lifecycle — from picking up an issue through branch setup, implementation, and raising a PR. Includes /swarm (agent-driven) and /swarm-exec (harness-driven) agentic flows.",
       "author": {
         "name": "CoderCoco"
       },
       "license": "MIT",
       "repository": "https://github.com/CoderCoco/claude-plugin-marketplace",
-      "keywords": [
-        "github",
-        "issues",
-        "workflow",
-        "pr",
-        "agents",
-        "swarm"
-      ],
+      "keywords": ["github", "issues", "workflow", "pr", "agents", "swarm"],
       "category": "productivity"
     },
     {
       "name": "mission",
-      "description": "End-to-end GitHub issue orchestrator \u2014 plan, build, review, open PR, handle comments. Resumable workflow pipeline. Space / mission control themed.",
-      "author": {
-        "name": "CoderCoco"
-      },
+      "description": "End-to-end GitHub issue orchestrator — plan, build, review, open PR, handle comments. Resumable workflow pipeline. Space / mission control themed.",
+      "author": { "name": "CoderCoco" },
       "source": "./plugins/mission",
       "license": "MIT"
     },
     {
       "name": "runpane-utils",
       "description": "Guardrails for launching Claude workers through Pane: blocks the built-in --agent claude template (--dangerously-skip-permissions) and enforces --tool-command with a session id.",
-      "author": {
-        "name": "CoderCoco"
-      },
+      "author": { "name": "CoderCoco" },
       "source": "./plugins/runpane-utils",
       "license": "MIT"
     }
