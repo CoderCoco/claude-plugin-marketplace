@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__pane__agents_start|mcp__pane__panels_create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-pane-launch.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

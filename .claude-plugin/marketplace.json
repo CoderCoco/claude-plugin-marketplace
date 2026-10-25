@@ -23,6 +23,13 @@
       "author": { "name": "CoderCoco" },
       "source": "./plugins/mission",
       "license": "MIT"
+    },
+    {
+      "name": "runpane-utils",
+      "description": "Guardrails for launching Claude workers through Pane: blocks the built-in --agent claude template (--dangerously-skip-permissions) and enforces --tool-command with a session id.",
+      "author": { "name": "CoderCoco" },
+      "source": "./plugins/runpane-utils",
+      "license": "MIT"
     }
   ]
 }
