@@ -1,6 +1,6 @@
 ---
 name: pane-launch
-description: Use whenever launching Claude agents, panes, or panels through Pane — `runpane panes create`, `runpane panels create`, `runpane agents start`, or the mcp__pane__agents_start / mcp__pane__panels_create tools. Ensures Claude workers start with an explicit --tool-command and session id instead of the built-in template that skips permission prompts.
+description: Use whenever launching Claude agents, panes, or panels through Pane — `runpane panes create`, `runpane panels create`, `runpane panes adopt --launch`, `runpane agents start`, or the mcp__pane__agents_start / mcp__pane__panels_create tools. Ensures Claude workers start with an explicit --tool-command and session id instead of the built-in template that skips permission prompts.
 ---
 
 # Pane Agent Launch
@@ -13,7 +13,7 @@ Pane's built-in `--agent claude` template runs `claude --dangerously-skip-permis
 
     --agent claude --tool-command 'claude --session-id "$(uuidgen)"'
 
-Applies to `runpane panes create`, `runpane panels create`, `runpane agents start`, and the `mcp__pane__agents_start` / `mcp__pane__panels_create` tools (MCP fields: `agent: "claude"`, `toolCommand: 'claude --session-id "$(uuidgen)"'`).
+Applies to `runpane panes create`, `runpane panels create`, `runpane panes adopt --launch`, `runpane agents start`, and the `mcp__pane__agents_start` / `mcp__pane__panels_create` tools (MCP fields: `agent: "claude"`, `toolCommand: 'claude --session-id "$(uuidgen)"'`).
 
 ## Step 3 — Mind the caveats
 

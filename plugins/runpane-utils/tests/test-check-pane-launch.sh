@@ -37,6 +37,24 @@ bash_case "non-claude tool-command"              allow "runpane panels create --
 bash_case "unrelated runpane command"            allow 'runpane panes list --json'
 bash_case "unrelated Bash"                       allow 'ls -la && git status'
 
+# --- review-feedback cases ---
+bash_case "wrapper: env FOO=1 claude --dangerously-skip-permissions" deny "runpane panels create --pane 1 --tool-command 'env FOO=1 claude --dangerously-skip-permissions' --yes"
+bash_case "wrapper: env claude with session id"  allow "runpane panels create --pane 1 --tool-command 'env FOO=1 claude --session-id abc' --yes"
+bash_case "split-quoted skip flag"               deny  "runpane panels create --pane 1 --agent claude --tool-command 'claude --dangerously-skip\"-\"permissions --session-id x' --yes"
+bash_case "adopt without --launch"               allow 'runpane panes adopt --repo r --path /p --name n --agent claude --yes'
+bash_case "adopt --launch, bare claude"          deny  'runpane panes adopt --repo r --path /p --name n --agent claude --launch --yes'
+bash_case "adopt --launch, correct form"         allow "runpane panes adopt --repo r --path /p --name n --agent claude --tool-command '$GOOD' --launch --yes"
+bash_case "chained: bare first, good second (;)" deny  "runpane panels create --pane 1 --agent claude --yes; runpane panels create --pane 1 --agent claude --tool-command 'claude --session-id x' --yes"
+bash_case "chained: bare second (&&)"            deny  "runpane panels create --pane 1 --agent claude --tool-command '$GOOD' --yes && runpane panels create --pane 2 --agent claude --yes"
+bash_case "chained: both good"                   allow "runpane panels create --pane 1 --agent claude --tool-command '$GOOD' --yes; runpane panels create --pane 2 --agent claude --tool-command '$GOOD' --yes"
+
+# jq missing: Pane calls denied, unrelated calls allowed
+nojq_dir=$(mktemp -d); for b in bash grep cat tr sed; do ln -s "$(command -v $b)" "$nojq_dir/$b"; done
+nojq() { PATH=$nojq_dir "$BASH" "$HOOK" <<<"$1"; }
+if nojq '{"tool_name":"Bash","tool_input":{"command":"runpane panels create --agent claude"}}' | grep -q '"deny"'; then pass=$((pass+1)); echo "ok   no jq: pane call denied"; else fail=$((fail+1)); echo "FAIL no jq: pane call denied"; fi
+if [[ -z $(nojq '{"tool_name":"Bash","tool_input":{"command":"ls"}}') ]]; then pass=$((pass+1)); echo "ok   no jq: unrelated call allowed"; else fail=$((fail+1)); echo "FAIL no jq: unrelated call allowed"; fi
+rm -rf "$nojq_dir"
+
 # --- MCP: mcp__pane__agents_start / mcp__pane__panels_create ---
 for t in mcp__pane__agents_start mcp__pane__panels_create; do
   run_case "$t claude, no toolCommand"           deny  "$t" '{"agent":"claude","pane":"1"}'

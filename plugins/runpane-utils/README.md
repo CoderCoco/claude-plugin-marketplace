@@ -31,13 +31,16 @@ Requires `jq` on `PATH`.
 
 Only Claude launches are inspected; Codex/Cursor and unrelated commands pass through.
 
-- `runpane panes create|adopt`, `runpane panels create`, `runpane agents start` with `--agent claude` (also `--agent=claude`, quoted) and no `--tool-command`.
+- `runpane panes create`, `runpane panels create`, `runpane agents start`, and `runpane panes adopt --launch` with `--agent claude` (also `--agent=claude`, quoted) and no `--tool-command`.
 - A `--tool-command` for Claude without `--session-id`, or containing `--dangerously-skip-permissions`.
 - `--tool-command claude ...` without `--agent` (still a Claude launch).
 - `mcp__pane__agents_start` / `mcp__pane__panels_create` with `agent: "claude"` and no `toolCommand` (or one lacking `--session-id`). MCP field names are the CLI flags camelCased, so `--tool-command` is `toolCommand`.
-- Commands are checked across pipes, `&&` chains, and multi-line input.
+- Wrapped commands such as `--tool-command 'env FOO=1 claude ...'`.
+- Commands are split on `;`, `&&`, `||`, `|` and newlines, and every `runpane` launch is validated on its own.
+- Quote-split flags (`--dangerously-skip"-"permissions`) are caught by stripping quotes and backslashes before checking.
+- If `jq` is missing, Pane-related calls are denied (fail closed); other calls pass.
 
-Not covered: `--from-json` launches (the payload is not inspected).
+Not covered: `--from-json` launches (the payload is not inspected) and shell expansion beyond quote stripping (variables, `eval`).
 
 ## Caveats
 
