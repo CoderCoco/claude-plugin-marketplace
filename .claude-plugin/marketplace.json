@@ -30,6 +30,13 @@
       "author": { "name": "CoderCoco" },
       "source": "./plugins/runpane-utils",
       "license": "MIT"
+    },
+    {
+      "name": "pr-watch",
+      "description": "Open a PR with a Conventional Commits title and watch it: a Bun/TS watcher streams new comments, reviews, check results, and merge/close into the session via Monitor.",
+      "author": { "name": "CoderCoco" },
+      "source": "./plugins/pr-watch",
+      "license": "MIT"
     }
   ]
 }
