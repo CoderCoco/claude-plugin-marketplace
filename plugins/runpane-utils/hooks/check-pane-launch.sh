@@ -15,7 +15,13 @@
 set -u
 input=$(cat)
 
-MSG='Pane Claude launches must not use the bare --agent claude template (it runs claude --dangerously-skip-permissions and disables permission prompts). Launch with: --agent claude --tool-command '\''claude --session-id "$(uuidgen)"'\''. Keep --agent claude alongside --tool-command so Pane still treats the panel as Claude Code. Note: {sessionId} is NOT expanded by --tool-command; use $(uuidgen), which the Pane shell evaluates.'
+# Bash/CLI form: flag syntax.
+MSG_CLI='Pane Claude launches must not use the bare --agent claude template (it runs claude --dangerously-skip-permissions and disables permission prompts). Launch with: --agent claude --tool-command '\''claude --session-id "$(uuidgen)"'\''. Keep --agent claude alongside --tool-command so Pane still treats the panel as Claude Code. Note: {sessionId} is NOT expanded by --tool-command; use $(uuidgen), which the Pane shell evaluates.'
+
+# mcp__pane__* form: exact camelCase params, since the CLI flag syntax does not map 1:1 and guessing caused repeated failures.
+MSG_MCP='Pane Claude launches must not use the bare agent: "claude" template (it runs claude --dangerously-skip-permissions and disables permission prompts). Pass BOTH params, camelCase, exactly: agent: "claude", toolCommand: "claude --session-id \"$(uuidgen)\"". Also pass yes: true (JSON boolean, not the string "true"). New Pane (agents_start): {repo: "<id or name from mcp__pane__repos_list>", name: "<kebab-name>", agent: "claude", toolCommand: "claude --session-id \"$(uuidgen)\"", yes: true, prompt: "<task>"}. Agent tab in an existing Pane: use pane: "<pane-id>" instead of repo and name. Param names are camelCase (toolCommand, baseBranch), never tool-command. {sessionId} is NOT expanded by toolCommand; use $(uuidgen), which the Pane shell evaluates.'
+
+MSG=$MSG_CLI
 
 deny_with() {
   # Hand-built JSON so this works without jq; $1 must contain no quotes or backslashes.
@@ -30,6 +36,7 @@ fi
 jq -e . >/dev/null 2>&1 <<<"$input" || deny_with 'runpane-utils guard could not parse the hook input; blocking the call.'
 
 tool=$(jq -r '.tool_name // ""' <<<"$input")
+[[ "$tool" == mcp__pane__* ]] && MSG=$MSG_MCP
 
 deny() {
   jq -n --arg r "$MSG" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
