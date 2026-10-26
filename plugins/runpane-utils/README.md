@@ -11,7 +11,7 @@ Pane's built-in `--agent claude` template expands to `claude --dangerously-skip-
 /plugin install runpane-utils@codercoco-custom-plugin-marketplace
 ```
 
-Requires `jq` on `PATH`.
+Requires [`bun`](https://bun.sh) on `PATH` (runs the hook, as in the `pr-watch` plugin). Without it, Pane-related calls are denied with an install hint.
 
 ## What's included
 
@@ -21,8 +21,9 @@ Requires `jq` on `PATH`.
 | `skills/determine-model` | `/runpane-utils:determine-model`: picks a model alias for any delegated work (Pane launch, Agent tool, Workflow) and says how to apply it |
 | `skills/determine-effort` | `/runpane-utils:determine-effort`: picks an effort level for any delegated work and says how to apply it |
 | `references/` | Single source of truth for routing: `model-routing.md`, `effort-levels.md`, `task-signals.md` |
-| `hooks/check-pane-launch.sh` | PreToolUse hook (`Bash`, `mcp__pane__agents_start`, `mcp__pane__panels_create`) that denies unsafe or unrouted Claude launches |
-| `tests/test-check-pane-launch.sh` | Plain-shell test suite for the hook |
+| `hooks/check-pane-launch.ts` | PreToolUse hook (`Bash`, `mcp__pane__agents_start`, `mcp__pane__panels_create`) that denies unsafe Claude launches |
+| `hooks/check-pane-launch.sh` | Thin shim `hooks.json` calls: runs the `.ts` with bun, or fails closed for Pane calls if bun is missing |
+| `hooks/check-pane-launch.test.ts` | `bun:test` suite for the hook and the shim |
 
 ## The required launch form
 
@@ -42,11 +43,32 @@ Only Claude launches are inspected; Codex/Cursor and unrelated commands pass thr
 - `--tool-command claude ...` without `--agent` (still a Claude launch).
 - `mcp__pane__agents_start` / `mcp__pane__panels_create` with `agent: "claude"` and no `toolCommand` (or one lacking `--session-id`). MCP field names are the CLI flags camelCased, so `--tool-command` is `toolCommand`.
 - Wrapped commands such as `--tool-command 'env FOO=1 claude ...'`.
-- Commands are split on `;`, `&&`, `||`, `|` and newlines, and every `runpane` launch is validated on its own.
 - Quote-split flags (`--dangerously-skip"-"permissions`) are caught by stripping quotes and backslashes before checking.
-- If `jq` is missing, Pane-related calls are denied (fail closed); other calls pass.
+- Fail closed: unparseable hook input is denied; if `bun` is missing, any call mentioning `runpane` or `mcp__pane__` is denied (other calls pass); a command too large or deeply nested to analyze is denied.
 
-Not covered: `--from-json` launches (the payload is not inspected) and shell expansion beyond quote stripping (variables, `eval`).
+### Command-aware inspection (Bash)
+
+Claude Code gives hooks only the raw `tool_input.command` string (no parsed structure), so `check-pane-launch.ts` tokenizes the command like a small shell parser and validates only commands that **execute** `runpane`. Text that merely mentions a launch is ignored.
+
+Inspected (these execute):
+
+- Each simple command, split on `;`, `&&`, `||`, `|`, `&`, newlines and `(`/`)`. Quotes are respected, so a `;` inside a quoted string does not split. Redirections (`2>&1`, `&>f`, `>(cmd)`) are removed from the argument list.
+- Any command carrying a `runpane` word as the command word or after wrappers and prefixes: `VAR=val`, `env`, `sudo`, `nohup`, `time`, `xargs`, `find -exec`, `npx runpane`, `pnpm dlx runpane`, path-qualified `/usr/bin/runpane`, `{runpane,}`, zsh `=runpane`. Commands that only take data (`echo`, `printf`, `grep`, `git`, `gh`, `cat`, `jq`, `cd`, ...) are skipped.
+- `$(...)`, backticks and `<(...)` anywhere, including inside double quotes and unquoted heredoc bodies; `$'...'` / `$"..."` are decoded.
+- `bash|sh|zsh|dash|ksh|fish -c '...'`, `eval ...`, `env -S '...'`, `watch '...'`, `su -c '...'`.
+- Text fed to a shell: `bash <<EOF`, `bash <<< '...'`, `echo '...' | sh`, `bash <(...)`, `source /dev/stdin`, and `bash -c "$(cat <<EOF ...)"`. When one appears, every captured command, word and heredoc body is rescanned as a script (with `echo` etc. no longer skipped).
+- An unterminated heredoc is scanned as a script rather than skipped.
+
+Not inspected (mentions, not launches): heredoc bodies, arguments of data-only commands (`echo`, `grep`, `git commit -m`, `gh pr create --body`), single-quoted strings, comments.
+
+The policy reads the `--tool-command` **value** only, so `--tool-command claude --prompt '--session-id'` is denied. `--agent` matching is case-insensitive.
+
+### Not covered
+
+- `--from-json` launches (the payload is not inspected).
+- Anything that cannot be resolved statically: variables, aliases or functions as the command word (`$RP panels create ...`, `f(){ runpane "$@"; }`), scripts invoked by file (`bash launch.sh`), `python -c` / `node -e` calling `runpane`, `ssh host '...'`, globs, `${IFS}` tricks, zsh `${:-runpane}`.
+- Loose matching can over-deny: any non-data command with a bare `runpane` word is validated, and when a shell reads stdin anywhere in the command, every string in the command is rescanned, so `git commit -m '<launch text>'; echo hi | bash` is denied.
+- Commands over about 500k tokenizer steps or 40 nested scans are denied rather than analyzed.
 
 ## Model routing
 
@@ -101,5 +123,5 @@ MCP param names are camelCase (`toolCommand`, `baseBranch`), `yes` must be the b
 ## Tests
 
 ```shell
-plugins/runpane-utils/tests/test-check-pane-launch.sh
+cd plugins/runpane-utils/hooks && bun test
 ```
