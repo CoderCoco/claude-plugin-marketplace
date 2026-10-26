@@ -1,7 +1,7 @@
 {
   "name": "runpane-utils",
   "description": "Guardrails for launching Claude workers through Pane (runpane CLI / Pane MCP tools): blocks the built-in --agent claude template, which runs claude --dangerously-skip-permissions, and teaches the --tool-command form.",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "author": {
     "name": "CoderCoco"
   },

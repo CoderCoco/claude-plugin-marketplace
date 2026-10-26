@@ -88,5 +88,19 @@ cli_ti=$(jq -nc --arg c 'runpane panels create --pane 1 --agent claude --yes' '{
 reason_case "Bash msg shows CLI flag form"     Bash "$cli_ti" must-contain "--tool-command 'claude --session-id"
 reason_case "Bash msg has no MCP param form"   Bash "$cli_ti" must-not-contain 'toolCommand'
 
+# --- Model/effort routing flags are allowed; unsafe flags still denied ---
+ROUTED='claude --model opus --effort high --session-id "$(uuidgen)"'
+bash_case "routed: --model/--effort + session-id"   allow "runpane agents start --pane 1 --agent claude --tool-command '$ROUTED' --prompt hi --yes"
+bash_case "routed: --effort ultracode"              allow "runpane agents start --pane 1 --agent claude --tool-command 'claude --model fable --effort ultracode --session-id x' --prompt hi --yes"
+bash_case "routed: --model haiku --effort medium"   allow "runpane panels create --pane 1 --agent claude --tool-command 'claude --model haiku --effort medium --session-id x' --yes"
+bash_case "routed: no session-id"                   deny  "runpane panels create --pane 1 --agent claude --tool-command 'claude --model opus --effort high' --yes"
+bash_case "routed: skip-permissions alongside --model" deny "runpane panels create --pane 1 --agent claude --tool-command 'claude --model opus --effort high --dangerously-skip-permissions --session-id x' --yes"
+for t in mcp__pane__agents_start mcp__pane__panels_create; do
+  run_case "$t routed toolCommand"                  allow "$t" "$(jq -nc --arg c "$ROUTED" '{agent:"claude",toolCommand:$c}')"
+  run_case "$t routed ultracode"                    allow "$t" '{"agent":"claude","toolCommand":"claude --model opus --effort ultracode --session-id x"}'
+  run_case "$t routed, skip-permissions"            deny  "$t" '{"agent":"claude","toolCommand":"claude --model opus --effort high --dangerously-skip-permissions --session-id x"}'
+  run_case "$t routed, no session-id"               deny  "$t" '{"agent":"claude","toolCommand":"claude --model opus --effort high"}'
+done
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))
