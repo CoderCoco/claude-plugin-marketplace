@@ -21,12 +21,12 @@ gh auth status >/dev/null 2>&1 || echo "MISSING: authenticated gh (run: gh auth 
 Use `$ARGUMENTS` if given (a PR number or a PR URL). Otherwise resolve the PR for the current branch:
 
 ```bash
-gh pr view --json number,url,state,headRepository,headRepositoryOwner
+gh pr view --json number,url,state
 ```
 
 - If the PR is already `MERGED` or `CLOSED`, tell the user and stop — there is nothing to watch.
 - If no PR exists for the branch, tell the user and suggest `/pr-open`.
-- Determine `owner/name` for the repo the PR lives in (from the URL, or `gh repo view --json nameWithOwner`). Pass it explicitly so the watcher does not depend on the working directory.
+- Determine `owner/name` for the repo the PR lives in (parse it from the PR's `url`, `https://github.com/<owner>/<name>/pull/<n>` — this is the base repo the PR lives in; do not use the head repo or `gh repo view`, which can name a fork). Pass it explicitly so the watcher does not depend on the working directory.
 
 ## Step 3: Start the watcher
 
