@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse: deny Pane launches of Claude that would run the built-in template
 # (`claude --dangerously-skip-permissions`) instead of an explicit
-# --tool-command carrying --session-id.
+# --tool-command carrying --session-id, and require every Claude launch to carry
+# --model and --effort (routed via the determine-model / determine-effort skills).
 #
 # Covers:
 #   Bash                          runpane (panes|panels) create, panes adopt --launch, agents start
@@ -16,10 +17,10 @@ set -u
 input=$(cat)
 
 # Bash/CLI form: flag syntax.
-MSG_CLI='Pane Claude launches must not use the bare --agent claude template (it runs claude --dangerously-skip-permissions and disables permission prompts). Launch with: --agent claude --tool-command '\''claude --session-id "$(uuidgen)"'\''. Keep --agent claude alongside --tool-command so Pane still treats the panel as Claude Code. Note: {sessionId} is NOT expanded by --tool-command; use $(uuidgen), which the Pane shell evaluates.'
+MSG_CLI='Pane Claude launches must not use the bare --agent claude template (it runs claude --dangerously-skip-permissions and disables permission prompts). Launch with: --agent claude --tool-command '\''claude --model sonnet --effort medium --session-id "$(uuidgen)"'\'' (pick model/effort per task, see /runpane-utils:determine-model and /runpane-utils:determine-effort). Keep --agent claude alongside --tool-command so Pane still treats the panel as Claude Code. Note: {sessionId} is NOT expanded by --tool-command; use $(uuidgen), which the Pane shell evaluates.'
 
 # mcp__pane__* form: exact camelCase params, since the CLI flag syntax does not map 1:1 and guessing caused repeated failures.
-MSG_MCP='Pane Claude launches must not use the bare agent: "claude" template (it runs claude --dangerously-skip-permissions and disables permission prompts). Pass BOTH params, camelCase, exactly: agent: "claude", toolCommand: "claude --session-id \"$(uuidgen)\"". Also pass yes: true (JSON boolean, not the string "true"). New Pane (agents_start): {repo: "<id or name from mcp__pane__repos_list>", name: "<kebab-name>", agent: "claude", toolCommand: "claude --session-id \"$(uuidgen)\"", yes: true, prompt: "<task>"}. Agent tab in an existing Pane: use pane: "<pane-id>" instead of repo and name. Param names are camelCase (toolCommand, baseBranch), never tool-command. {sessionId} is NOT expanded by toolCommand; use $(uuidgen), which the Pane shell evaluates.'
+MSG_MCP='Pane Claude launches must not use the bare agent: "claude" template (it runs claude --dangerously-skip-permissions and disables permission prompts). Pass BOTH params, camelCase, exactly: agent: "claude", toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\"" (pick model/effort per task, see /runpane-utils:determine-model and /runpane-utils:determine-effort). Also pass yes: true (JSON boolean, not the string "true"). New Pane (agents_start): {repo: "<id or name from mcp__pane__repos_list>", name: "<kebab-name>", agent: "claude", toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\"", yes: true, prompt: "<task>"}. Agent tab in an existing Pane: use pane: "<pane-id>" instead of repo and name. Param names are camelCase (toolCommand, baseBranch), never tool-command. {sessionId} is NOT expanded by toolCommand; use $(uuidgen), which the Pane shell evaluates.'
 
 MSG=$MSG_CLI
 
@@ -46,6 +47,23 @@ deny() {
 # Strip quotes and backslashes so quoted/escaped flag spellings compare equal.
 norm() { tr -d '"'\''\\' <<<"$1"; }
 
+# Model/effort routing. Args: $1 = normalized tool command of a Claude launch.
+# Denies (tool-aware message) when --model and/or --effort is missing; --flag=value counts.
+# Kept separate from check_launch so the Bash scanner can change independently.
+check_routing() {
+  local tc=$1 missing=() example
+  [[ "$tc" =~ --model([[:space:]]|=|$) ]] || missing+=(--model)
+  [[ "$tc" =~ --effort([[:space:]]|=|$) ]] || missing+=(--effort)
+  ((${#missing[@]})) || return 0
+  if [[ "$tool" == mcp__pane__* ]]; then
+    example='toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\""'
+  else
+    example="--tool-command 'claude --model sonnet --effort medium --session-id \"\$(uuidgen)\"'"
+  fi
+  MSG="Pane Claude launches must carry both --model and --effort inside the tool command; missing: ${missing[*]}. Choose them per task: consult the skills /runpane-utils:determine-model and /runpane-utils:determine-effort (fallback: Read references/model-routing.md and references/effort-levels.md in the runpane-utils plugin). A model or effort the user named explicitly always wins. Safe fallback if unsure: ${example}. Keep --session-id; --dangerously-skip-permissions stays forbidden."
+  deny
+}
+
 # Args: $1 = agent name (may be empty), $2 = tool command (may be empty).
 # Denies unless a Claude launch has an explicit session id and no permission bypass.
 check_launch() {
@@ -58,6 +76,7 @@ check_launch() {
   [[ -n "$tc" ]] || deny
   [[ "$tc" == *--dangerously-skip-permissions* ]] && deny
   [[ "$tc" == *--session-id* ]] || deny
+  check_routing "$tc"
   return 0
 }
 

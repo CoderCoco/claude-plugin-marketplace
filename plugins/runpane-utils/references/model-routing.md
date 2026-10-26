@@ -1,6 +1,6 @@
 # Model routing
 
-Pick the cheapest model that reliably finishes the task. Pane has no model option, so the choice is spliced into the tool command:
+Pick the cheapest model that reliably finishes the task. Consumed by the `determine-model` and `determine-effort` skills, which also say how to apply the choice per consumer. For Pane launches, which have no model option, the choice is spliced into the tool command:
 
     claude --model <alias> --effort <level> --session-id "$(uuidgen)"
 
