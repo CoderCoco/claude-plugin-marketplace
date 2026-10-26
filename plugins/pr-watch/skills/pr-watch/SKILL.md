@@ -44,7 +44,8 @@ Each stdout line is a notification, one of:
 
 | Line | Meaning |
 |---|---|
-| `watching PR #N: OPEN, K checks` | Startup baseline (no events replayed) |
+| `watching PR #N: OPEN, K checks` | Startup baseline (existing comments are not replayed) |
+| `check <workflow>/<name> -> <RESULT> (already failing at startup)` | Check was already red when the watcher started |
 | `comment by <user>: …` / `review (<STATE>) by <user>: …` / `inline comment by <user> on <path>: …` | New discussion |
 | `check <workflow>/<name> -> <CONCLUSION>` | A check concluded (pending states are not reported) |
 | `review decision -> <DECISION>` | `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `NONE` |

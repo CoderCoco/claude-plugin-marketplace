@@ -1,7 +1,7 @@
 {
   "name": "pr-watch",
   "description": "Open a pull request with a Conventional Commits title and stream its comments, reviews, check results, and merge/close events into the session via a Bun/TS watcher run under the Monitor tool.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
     "name": "CoderCoco"
   },

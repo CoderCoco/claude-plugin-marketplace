@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildSnapshot, diffSnapshots, failureAction, parseArgs, snippet } from './watch-pr.ts';
+import { buildSnapshot, diffSnapshots, failureAction, parseArgs, snippet, startupFailures } from './watch-pr.ts';
 
 // snippet: sanitizes untrusted text before it reaches stdout.
 test('snippet strips control chars and caps length', () => {
@@ -91,4 +91,18 @@ test('parseArgs: rejects bad input', () => {
   for (const argv of [[], ['abc'], ['1', '2'], ['1', '--bogus'], ['1', '--repo'], ['1', '--repo', 'nope'], ['1', '--interval', '0'], ['1', '--interval', 'x'], ['1', '--max-backoff']]) {
     expect(parseArgs(argv)).toHaveProperty('error');
   }
+});
+
+// Failing checks present at startup are reported; passing and pending ones are not.
+test('startupFailures reports only already-failing checks', () => {
+  const snap = buildSnapshot({ state: 'OPEN', statusCheckRollup: [
+    { __typename: 'CheckRun', workflowName: 'CI', name: 'build', conclusion: 'FAILURE' },
+    { __typename: 'CheckRun', workflowName: 'CI', name: 'lint', conclusion: 'SUCCESS' },
+    { __typename: 'CheckRun', workflowName: 'CI', name: 'e2e', status: 'IN_PROGRESS' },
+    { __typename: 'StatusContext', context: 'cr', state: 'ERROR' },
+  ] }, []);
+  expect(startupFailures(snap)).toEqual([
+    'check CI/build -> FAILURE (already failing at startup)',
+    'check cr -> ERROR (already failing at startup)',
+  ]);
 });

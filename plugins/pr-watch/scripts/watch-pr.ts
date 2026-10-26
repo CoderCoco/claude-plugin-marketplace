@@ -145,6 +145,21 @@ export function buildSnapshot(view: PrView, inline: InlineComment[]): Snapshot {
 /** Check results that mean "not finished yet"; transitions into these are not reported. */
 const PENDING = new Set(['PENDING', 'IN_PROGRESS', 'QUEUED', 'WAITING', 'EXPECTED', '']);
 
+/** Check results that mean the check did not pass. */
+const FAILING = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
+
+/**
+ * Lines for checks that are already failing in the first snapshot, so a red PR is
+ * never mistaken for a green one just because the watcher started late. Pure.
+ * @param snap First snapshot taken by the watcher.
+ * @returns One line per failing check.
+ */
+export function startupFailures(snap: Snapshot): string[] {
+  return Object.entries(snap.checks)
+    .filter(([, result]) => FAILING.has(result))
+    .map(([key, result]) => `check ${snap.checkLabels[key] ?? key} -> ${result} (already failing at startup)`);
+}
+
 /**
  * Lines describing changes from prev to next. Pure.
  * @param prev Earlier snapshot.
@@ -336,8 +351,9 @@ async function main(): Promise<void> {
       failures = 0;
 
       if (!prev) {
-        // First poll: announce only; existing comments aren't replayed.
+        // First poll: announce and flag failing checks; existing comments aren't replayed.
         console.log(`watching PR #${opts.pr}: ${next.state}, ${Object.keys(next.checks).length} checks`);
+        for (const line of startupFailures(next)) console.log(line);
       } else {
         for (const line of diffSnapshots(prev, next)) console.log(line);
       }
