@@ -42,6 +42,21 @@ Only Claude launches are inspected; Codex/Cursor and unrelated commands pass thr
 
 Not covered: `--from-json` launches (the payload is not inspected) and shell expansion beyond quote stripping (variables, `eval`).
 
+## Model routing
+
+The `pane-launch` skill (Step 3b) picks a model and effort per task and splices them into the tool command, since Pane has no model/effort option:
+
+```shell
+claude --model <haiku|sonnet|opus|fable> --effort <low|medium|high|xhigh|max|ultracode> --session-id "$(uuidgen)"
+```
+
+- haiku = simple, sonnet = most (default `sonnet`/`medium`), opus = complex, fable = most complicated; `ultracode` for substantive multi-phase orchestrated work.
+- A model/effort named by the user always wins. `--effort` is always passed explicitly.
+- The hook needs no changes: extra flags pass, `--session-id` is still required, `--dangerously-skip-permissions` is still denied.
+- The task-signal table is our own judgment, not an Anthropic taxonomy.
+
+References (read by the skill): `references/model-routing.md`, `references/effort-levels.md`, `references/task-signals.md`.
+
 ## Caveats
 
 - `{sessionId}` is **not** expanded by `--tool-command`. It is only a placeholder in the resume templates of a saved custom command in Pane's UI. Use `$(uuidgen)`, evaluated by the Pane shell.

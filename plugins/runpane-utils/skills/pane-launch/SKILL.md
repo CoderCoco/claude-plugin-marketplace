@@ -28,14 +28,40 @@ Pane's built-in `--agent claude` template runs `claude --dangerously-skip-permis
 
 Before every call, confirm:
 
-- [ ] `agent: "claude"` AND `toolCommand: "claude --session-id \"$(uuidgen)\""` are both present (never one without the other).
+- [ ] `agent: "claude"` AND `toolCommand` (the Step 3b command, containing `--session-id`) are both present (never one without the other).
 - [ ] Param names are **camelCase** in MCP: `toolCommand`, `baseBranch`. The hyphenated `tool-command` is rejected as an unknown argument. (CLI flags stay hyphenated: `--tool-command`, `--base-branch`.)
 - [ ] `yes: true` is a JSON **boolean**, not the string `"true"`.
 - [ ] New Pane: `repo` is an id or name returned by `mcp__pane__repos_list` (never an absolute path) **and** `name` is a kebab-case string.
 - [ ] Existing Pane: `pane: "<pane-id>"` from `panes_list`, and **no** `repo` / `name`.
 - [ ] `prompt` is set for `agents_start` (the task for the agent).
 
+## Step 3b — Route model and effort
+
+Pane has no model or effort option. The only way to choose them is flags inside the tool command. Build `<TOOL_COMMAND>` (used by every template in Step 4):
+
+    claude --model <alias> --effort <level> --session-id "$(uuidgen)"
+
+1. **User named a model and/or effort** → use exactly that; it always wins. Route only what they left unspecified.
+2. Otherwise `Read` the references (use the first path that exists):
+   - `${CLAUDE_PLUGIN_ROOT}/references/model-routing.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/model-routing.md`)
+   - `${CLAUDE_PLUGIN_ROOT}/references/effort-levels.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/effort-levels.md`)
+   - `${CLAUDE_PLUGIN_ROOT}/references/task-signals.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/task-signals.md`)
+3. Classify the task: haiku = simple, sonnet = most (**default sonnet / medium**), opus = complex, fable = most complicated. Effort `low`–`xhigh`; `--effort ultracode` only for substantive multi-phase orchestrated work (opus/fable).
+4. Substitute into `<TOOL_COMMAND>`. Example: `claude --model opus --effort high --session-id "$(uuidgen)"`.
+5. If you skip routing, the literal fallback is `claude --session-id "$(uuidgen)"` (runs the user's default model/effort).
+
+Rules:
+
+- Always pass `--effort` explicitly; the default differs between docs.
+- `--session-id` must stay in the command; `--dangerously-skip-permissions` is still denied by the hook.
+- Never `--effort low` on haiku (skips checks); use `medium`+.
+- `max` is session-only and overthinks; avoid unless the user asks.
+- `ultracode` needs an xhigh-capable model (opus/fable) and is docs-only (v2.1.203+); if it errors, use `--effort xhigh`.
+- Fable may need a one-time usage-credit consent. If a Fable launch fails, relaunch with `--model opus --effort xhigh`.
+
 ## Step 4 — Copy-paste call templates
+
+Replace `<TOOL_COMMAND>` with the command from Step 3b.
 
 ### A. MCP — new Pane + agent (`agents_start`)
 
@@ -49,7 +75,7 @@ Then:
       "repo": "<id or name from repos_list>",
       "name": "<kebab-case-pane-name>",
       "agent": "claude",
-      "toolCommand": "claude --session-id \"$(uuidgen)\"",
+      "toolCommand": "<TOOL_COMMAND>",
       "yes": true,
       "prompt": "<full task prompt for the agent>"
     }
@@ -61,7 +87,7 @@ Then:
     mcp__pane__agents_start {
       "pane": "<pane-id from panes_list>",
       "agent": "claude",
-      "toolCommand": "claude --session-id \"$(uuidgen)\"",
+      "toolCommand": "<TOOL_COMMAND>",
       "yes": true,
       "prompt": "<full task prompt for the agent>"
     }
@@ -71,7 +97,7 @@ Then:
     mcp__pane__panels_create {
       "pane": "<pane-id>",
       "agent": "claude",
-      "toolCommand": "claude --session-id \"$(uuidgen)\"",
+      "toolCommand": "<TOOL_COMMAND>",
       "yes": true
     }
 
@@ -80,29 +106,29 @@ Then:
 New Pane + agent:
 
     runpane agents start --repo "<id-or-name>" --name "<kebab-name>" \
-      --agent claude --tool-command 'claude --session-id "$(uuidgen)"' \
+      --agent claude --tool-command '<TOOL_COMMAND>' \
       --prompt "<task>" --yes
 
 Agent tab in an existing Pane:
 
     runpane agents start --pane "<pane-id>" \
-      --agent claude --tool-command 'claude --session-id "$(uuidgen)"' \
+      --agent claude --tool-command '<TOOL_COMMAND>' \
       --prompt "<task>" --yes
 
 New Pane only (no prompt):
 
     runpane panes create --repo "<id-or-name>" --name "<kebab-name>" \
-      --agent claude --tool-command 'claude --session-id "$(uuidgen)"' --yes
+      --agent claude --tool-command '<TOOL_COMMAND>' --yes
 
 Extra panel in an existing Pane:
 
     runpane panels create --pane "<pane-id>" \
-      --agent claude --tool-command 'claude --session-id "$(uuidgen)"' --yes
+      --agent claude --tool-command '<TOOL_COMMAND>' --yes
 
 Adopt an existing worktree and launch an agent in it (`--launch` is what starts the agent):
 
     runpane panes adopt --repo "<id-or-name>" --path "<worktree-path>" --name "<kebab-name>" \
-      --agent claude --tool-command 'claude --session-id "$(uuidgen)"' --launch --yes
+      --agent claude --tool-command '<TOOL_COMMAND>' --launch --yes
 
 ## Step 5 — If `agents_start` times out or fails
 
