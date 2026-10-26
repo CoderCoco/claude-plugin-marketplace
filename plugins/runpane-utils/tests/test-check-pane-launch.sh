@@ -66,5 +66,27 @@ for t in mcp__pane__agents_start mcp__pane__panels_create; do
 done
 run_case "other pane MCP tool" allow mcp__pane__panes_list '{"agent":"claude"}'
 
+# --- Deny message is tool-aware ---
+# reason_case <name> <tool_name> <tool_input-json> <must-contain|must-not-contain> <fixed string>
+reason_case() {
+  local name=$1 tool=$2 ti=$3 mode=$4 needle=$5 reason found=no
+  reason=$(jq -nc --arg t "$tool" --argjson i "$ti" '{tool_name:$t,tool_input:$i}' | "$HOOK" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')
+  [[ $reason == *"$needle"* ]] && found=yes
+  if [[ ($mode == must-contain && $found == yes) || ($mode == must-not-contain && $found == no) ]]; then
+    pass=$((pass+1)); printf 'ok   %s\n' "$name"
+  else fail=$((fail+1)); printf 'FAIL %s (%s %s)\n' "$name" "$mode" "$needle"; fi
+}
+MCP_TC='toolCommand: "claude --session-id \"$(uuidgen)\""'
+for t in mcp__pane__agents_start mcp__pane__panels_create; do
+  reason_case "$t msg shows agent param"       "$t" '{"agent":"claude"}' must-contain 'agent: "claude"'
+  reason_case "$t msg shows toolCommand param" "$t" '{"agent":"claude"}' must-contain "$MCP_TC"
+  reason_case "$t msg says yes: true boolean"  "$t" '{"agent":"claude"}' must-contain 'yes: true'
+  reason_case "$t msg says camelCase"          "$t" '{"agent":"claude"}' must-contain 'camelCase'
+  reason_case "$t msg is not CLI flag form"    "$t" '{"agent":"claude"}' must-not-contain "--tool-command '"
+done
+cli_ti=$(jq -nc --arg c 'runpane panels create --pane 1 --agent claude --yes' '{command:$c}')
+reason_case "Bash msg shows CLI flag form"     Bash "$cli_ti" must-contain "--tool-command 'claude --session-id"
+reason_case "Bash msg has no MCP param form"   Bash "$cli_ti" must-not-contain 'toolCommand'
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 ((fail == 0))

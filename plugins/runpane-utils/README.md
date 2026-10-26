@@ -48,6 +48,22 @@ Not covered: `--from-json` launches (the payload is not inspected) and shell exp
 - Keep `--agent claude` next to `--tool-command` so Pane treats the panel as Claude Code and `--wait-ready` works.
 - The Pane CLI has no flag for resume templates; if `claude --resume <id>` matters, launch from a saved shortcut in the Pane UI.
 
+## Troubleshooting
+
+MCP param names are camelCase (`toolCommand`, `baseBranch`), `yes` must be the boolean `true`, and `agent: "claude"` always goes together with `toolCommand`. The `pane-launch` skill has ready-to-copy templates.
+
+| Error | Fix |
+|-------|-----|
+| `runpane agents start needs --pane <id> ... or --repo and --name` | Pass `pane: "<id>"` (existing Pane) or `repo` + `name` (new Pane). |
+| `runpane panes create requires --agent or --tool-command in non-interactive shells.` | Pass `agent: "claude"` and `toolCommand: "claude --session-id \"$(uuidgen)\""`. |
+| Hook deny: `must not use the bare --agent claude template` | Add `toolCommand` with `--session-id` next to `agent: "claude"`. |
+| `Unknown argument(s) for agents_start: tool-command` | Use camelCase `toolCommand`. |
+| `yes` string vs boolean | Pass `yes: true`, not `"true"`. |
+| `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` must be an id/name from `mcp__pane__repos_list`, not a path. |
+| `Timed out waiting for Pane <id> setup. Pane <id> was created before the failure and was kept` | Don't retry with `repo`/`name`. `panes_list` for the id, then `agents_start` with `pane: "<id>"` + `agent` + `toolCommand` + `yes: true`. |
+| `Panel ... is a explorer panel, not a terminal panel` | Same orphaned `initializing` Pane: add the agent tab via `pane: "<id>"`. |
+| `Permission denied` on `check-pane-launch.sh` | Update to >= 0.1.2. `hooks.json` invokes it via `bash "${CLAUDE_PLUGIN_ROOT}/hooks/check-pane-launch.sh"` on purpose, so the exec bit isn't required. |
+
 ## Tests
 
 ```shell
