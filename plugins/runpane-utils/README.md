@@ -56,7 +56,8 @@ MCP param names are camelCase (`toolCommand`, `baseBranch`), `yes` must be the b
 |-------|-----|
 | `runpane agents start needs --pane <id> ... or --repo and --name` | Pass `pane: "<id>"` (existing Pane) or `repo` + `name` (new Pane). |
 | `runpane panes create requires --agent or --tool-command in non-interactive shells.` | Pass `agent: "claude"` and `toolCommand: "claude --session-id \"$(uuidgen)\""`. |
-| Hook deny: `must not use the bare --agent claude template` | Add `toolCommand` with `--session-id` next to `agent: "claude"`. |
+| Hook deny (MCP): `must not use the bare agent: "claude" template` | Add `toolCommand: "claude --session-id \"$(uuidgen)\""` next to `agent: "claude"`. |
+| Hook deny (Bash/CLI): `must not use the bare --agent claude template` | Add `--tool-command 'claude --session-id "$(uuidgen)"'` next to `--agent claude`. |
 | `Unknown argument(s) for agents_start: tool-command` | Use camelCase `toolCommand`. |
 | `yes` string vs boolean | Pass `yes: true`, not `"true"`. |
 | `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` must be an id/name from `mcp__pane__repos_list`, not a path. |

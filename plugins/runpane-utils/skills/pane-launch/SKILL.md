@@ -19,7 +19,9 @@ Pane's built-in `--agent claude` template runs `claude --dangerously-skip-permis
     git worktree list
     git branch --list '*<task-keyword>*'
 
-- **Match found** → reuse it: use template B (agent tab, `pane: "<pane-id>"`). Never create a duplicate Pane.
+- **Pane match in `panes_list`** → reuse it with template B (agent tab, `pane: "<pane-id>"`). Never create a duplicate Pane.
+- **Matching worktree without a Pane** → adopt it with the `panes adopt ... --launch` command in template D. Do not use template B without a Pane ID.
+- **Branch-only match without a Pane** → resolve the associated worktree or Pane first (`git worktree list`, `panes_list`), then pick one of the two rows above.
 - **No match** → use template A (new Pane).
 
 ## Step 3 — Required parameters checklist
@@ -48,12 +50,11 @@ Then:
       "name": "<kebab-case-pane-name>",
       "agent": "claude",
       "toolCommand": "claude --session-id \"$(uuidgen)\"",
-      "baseBranch": "main",
       "yes": true,
       "prompt": "<full task prompt for the agent>"
     }
 
-`baseBranch` is optional; omit it to use the repo default. Creating a Pane can take over a minute (worktree install/build) — see Step 5 if it times out.
+`baseBranch` (CLI: `--base-branch`) is optional and omitted above: add `"baseBranch": "<branch>"` only when the user chose a base branch that exists in the repo; otherwise Pane uses the repo default. Creating a Pane can take over a minute (worktree install/build) — see Step 5 if it times out.
 
 ### B. MCP — agent tab in an existing Pane (`agents_start` with `pane`)
 
@@ -78,7 +79,7 @@ Then:
 
 New Pane + agent:
 
-    runpane agents start --repo "<id-or-name>" --name "<kebab-name>" --base-branch main \
+    runpane agents start --repo "<id-or-name>" --name "<kebab-name>" \
       --agent claude --tool-command 'claude --session-id "$(uuidgen)"' \
       --prompt "<task>" --yes
 
@@ -118,7 +119,8 @@ Symptom: the call runs >120s, gets backgrounded, then fails with `Timed out wait
 |---|---|---|
 | `runpane agents start needs --pane <id> ... or --repo and --name` | Called with only `prompt` | Add `pane: "<id>"` (existing Pane) or `repo` + `name` (new Pane). |
 | `runpane panes create requires --agent or --tool-command in non-interactive shells.` | No agent given | Add `agent: "claude"` **and** `toolCommand: "claude --session-id \"$(uuidgen)\""`. |
-| Hook deny: `Pane Claude launches must not use the bare --agent claude template...` | `agent: "claude"` without `toolCommand` | Add `toolCommand: "claude --session-id \"$(uuidgen)\""` (camelCase), keep `agent: "claude"`. |
+| Hook deny (MCP tool): `Pane Claude launches must not use the bare agent: "claude" template...` | `agent: "claude"` without `toolCommand` | Add `toolCommand: "claude --session-id \"$(uuidgen)\""` (camelCase), keep `agent: "claude"`. |
+| Hook deny (Bash/CLI): `Pane Claude launches must not use the bare --agent claude template...` | `--agent claude` without `--tool-command` | Add `--tool-command 'claude --session-id "$(uuidgen)"'` next to `--agent claude`. |
 | `Unknown argument(s) for agents_start: tool-command` | Hyphenated MCP param name | Use camelCase `toolCommand`. Don't send both spellings. |
 | `yes` ignored / call refused without confirmation | `yes: "true"` (string) or missing | Pass the boolean `yes: true`. |
 | `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` was an absolute path or guessed name | Call `mcp__pane__repos_list` and pass an `id` or `name` from it. |
