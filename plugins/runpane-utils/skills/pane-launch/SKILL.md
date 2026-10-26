@@ -41,18 +41,20 @@ Pane has no model or effort option. The only way to choose them is flags inside 
 
     claude --model <alias> --effort <level> --session-id "$(uuidgen)"
 
-1. **User named a model and/or effort** → use exactly that; it always wins. Route only what they left unspecified.
-2. Otherwise `Read` the references (use the first path that exists):
+The hook **denies Claude launches that lack `--model` or `--effort`**, so both are mandatory.
+
+1. **Model:** invoke `/runpane-utils:determine-model` (Skill tool: `runpane-utils:determine-model`) and take the alias it returns.
+2. **Effort:** invoke `/runpane-utils:determine-effort` (Skill tool: `runpane-utils:determine-effort`) and take the level it returns.
+3. If the skills are unavailable, `Read` the references directly (first path that exists) and follow `model-routing.md`'s decision procedure:
    - `${CLAUDE_PLUGIN_ROOT}/references/model-routing.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/model-routing.md`)
    - `${CLAUDE_PLUGIN_ROOT}/references/effort-levels.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/effort-levels.md`)
    - `${CLAUDE_PLUGIN_ROOT}/references/task-signals.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/task-signals.md`)
-3. Classify the task: haiku = simple, sonnet = most (**default sonnet / medium**), opus = complex, fable = most complicated. Effort `low`–`xhigh`; `--effort ultracode` only for substantive multi-phase orchestrated work (opus/fable).
-4. Substitute into `<TOOL_COMMAND>`. Example: `claude --model opus --effort high --session-id "$(uuidgen)"`.
-5. If you skip routing, the literal fallback is `claude --session-id "$(uuidgen)"` (runs the user's default model/effort).
+4. A model/effort the user named explicitly always wins; route only what they left unspecified.
+5. Substitute into `<TOOL_COMMAND>`. Example: `claude --model opus --effort high --session-id "$(uuidgen)"`.
+6. Literal fallback if you cannot route: `claude --model sonnet --effort medium --session-id "$(uuidgen)"`. A command with no `--model`/`--effort` is denied.
 
 Rules:
 
-- Always pass `--effort` explicitly; the default differs between docs.
 - `--session-id` must stay in the command; `--dangerously-skip-permissions` is still denied by the hook.
 - Never `--effort low` on haiku (skips checks); use `medium`+.
 - `max` is session-only and overthinks; avoid unless the user asks.
@@ -144,9 +146,10 @@ Symptom: the call runs >120s, gets backgrounded, then fails with `Timed out wait
 | Error text | Cause | Exact fix |
 |---|---|---|
 | `runpane agents start needs --pane <id> ... or --repo and --name` | Called with only `prompt` | Add `pane: "<id>"` (existing Pane) or `repo` + `name` (new Pane). |
-| `runpane panes create requires --agent or --tool-command in non-interactive shells.` | No agent given | Add `agent: "claude"` **and** `toolCommand: "claude --session-id \"$(uuidgen)\""`. |
-| Hook deny (MCP tool): `Pane Claude launches must not use the bare agent: "claude" template...` | `agent: "claude"` without `toolCommand` | Add `toolCommand: "claude --session-id \"$(uuidgen)\""` (camelCase), keep `agent: "claude"`. |
-| Hook deny (Bash/CLI): `Pane Claude launches must not use the bare --agent claude template...` | `--agent claude` without `--tool-command` | Add `--tool-command 'claude --session-id "$(uuidgen)"'` next to `--agent claude`. |
+| `runpane panes create requires --agent or --tool-command in non-interactive shells.` | No agent given | Add `agent: "claude"` **and** `toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\""`. |
+| Hook deny (MCP tool): `Pane Claude launches must not use the bare agent: "claude" template...` | `agent: "claude"` without `toolCommand` | Add `toolCommand: "claude --model <alias> --effort <level> --session-id \"$(uuidgen)\""` (camelCase; Step 3b), keep `agent: "claude"`. |
+| Hook deny (Bash/CLI): `Pane Claude launches must not use the bare --agent claude template...` | `--agent claude` without `--tool-command` | Add `--tool-command 'claude --model <alias> --effort <level> --session-id "$(uuidgen)"'` next to `--agent claude` (Step 3b). |
+| Hook deny: `Pane Claude launches must carry both --model and --effort ... missing: ...` | Tool command lacks `--model` and/or `--effort` | Run `/runpane-utils:determine-model` and `/runpane-utils:determine-effort` (Step 3b), add the flag(s) to the tool command. Unsure → `--model sonnet --effort medium`. |
 | `Unknown argument(s) for agents_start: tool-command` | Hyphenated MCP param name | Use camelCase `toolCommand`. Don't send both spellings. |
 | `yes` ignored / call refused without confirmation | `yes: "true"` (string) or missing | Pass the boolean `yes: true`. |
 | `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` was an absolute path or guessed name | Call `mcp__pane__repos_list` and pass an `id` or `name` from it. |
@@ -164,4 +167,4 @@ Symptom: the call runs >120s, gets backgrounded, then fails with `Timed out wait
 
 ## Step 8 — Expect the guard hook
 
-This plugin's PreToolUse hook denies Claude launches that lack `toolCommand` / `--tool-command` or `--session-id`, or that pass `--dangerously-skip-permissions`. For `mcp__pane__*` tools the denial shows the exact MCP params; for Bash it shows the CLI flags. If denied, rewrite the launch per Step 4 and retry.
+This plugin's PreToolUse hook denies Claude launches that lack `toolCommand` / `--tool-command`, `--session-id`, `--model` or `--effort`, or that pass `--dangerously-skip-permissions`. For `mcp__pane__*` tools the denial shows the exact MCP params; for Bash it shows the CLI flags. If denied, rewrite the launch per Step 4 and retry.
