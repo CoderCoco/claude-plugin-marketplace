@@ -37,6 +37,13 @@
       "author": { "name": "CoderCoco" },
       "source": "./plugins/pr-watch",
       "license": "MIT"
+    },
+    {
+      "name": "model-skills",
+      "description": "Pick the model and effort level for delegated Claude work (Agent tool, Workflow, wmux fanout_start, claude CLI) and get the snippet to apply it.",
+      "author": { "name": "CoderCoco" },
+      "source": "./plugins/model-skills",
+      "license": "MIT"
     }
   ]
 }

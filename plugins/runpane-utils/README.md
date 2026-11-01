@@ -18,9 +18,6 @@ Requires [`bun`](https://bun.sh) on `PATH` (runs the hook, as in the `pr-watch` 
 | Piece | Purpose |
 |-------|---------|
 | `skills/pane-launch` | Guidance that triggers whenever Claude launches Pane agents/panes/panels |
-| `skills/determine-model` | `/runpane-utils:determine-model`: picks a model alias for any delegated work (Pane launch, Agent tool, Workflow) and says how to apply it |
-| `skills/determine-effort` | `/runpane-utils:determine-effort`: picks an effort level for any delegated work and says how to apply it |
-| `references/` | Single source of truth for routing: `model-routing.md`, `effort-levels.md`, `task-signals.md` |
 | `hooks/check-pane-launch.ts` | PreToolUse hook (`Bash`, `mcp__pane__agents_start`, `mcp__pane__panels_create`) that denies unsafe Claude launches |
 | `hooks/check-pane-launch.sh` | Thin shim `hooks.json` calls: runs the `.ts` with bun, or fails closed for Pane calls if bun is missing |
 | `hooks/check-pane-launch.test.ts` | `bun:test` suite for the hook and the shim |
@@ -72,29 +69,11 @@ The policy reads the `--tool-command` **value** only, so `--tool-command claude 
 
 ## Model routing
 
-Two standalone skills choose a model and an effort level for any work you delegate, not just Pane launches:
-
-| Skill | Returns | Applied as |
-|-------|---------|------------|
-| `/runpane-utils:determine-model` | `haiku` / `sonnet` / `opus` / `fable` | Pane: `--model <alias>` in the tool command. Agent tool: `model: "<alias>"`. Workflow `agent()`: `{model: "<alias>"}` |
-| `/runpane-utils:determine-effort` | `low` / `medium` / `high` / `xhigh` / `max` / `ultracode` | Pane: `--effort <level>`. Agent tool: `effort`. Workflow `agent()`: `{effort}` |
-
-- haiku = simple, sonnet = most (default `sonnet`/`medium`), opus = complex, fable = most complicated.
-- A model/effort named by the user always wins.
-- `ultracode` (substantive multi-phase orchestrated work, opus/fable) is valid only for Pane/CLI launches (`--effort ultracode`); the Agent tool and Workflow accept `low`–`max`, so use `xhigh` there.
-- The `pane-launch` skill (Step 3b) delegates to these skills and splices the result into the tool command, since Pane has no model/effort option:
-
-```shell
-claude --model <alias> --effort <level> --session-id "$(uuidgen)"
-```
-
-- The task-signal table is our own judgment, not an Anthropic taxonomy.
-
-References (read by the skills; the only place the tables live): `references/model-routing.md`, `references/effort-levels.md`, `references/task-signals.md`.
+Choosing `--model` and `--effort` is handled by the separate [`model-skills`](../model-skills) plugin (`/model-skills:determine-model`, `/model-skills:determine-effort`), which is tool-agnostic. Install it alongside this plugin; without it, `pane-launch` falls back to `--model sonnet --effort medium`.
 
 ## Enforcement
 
-The hook denies every Claude launch (Bash/CLI, `mcp__pane__agents_start`, `mcp__pane__panels_create`) whose tool command lacks `--model` or `--effort`. **User-visible consequence:** a launch with only `claude --session-id ...` is refused with a message that names the missing flag(s), points at `/runpane-utils:determine-model` and `/runpane-utils:determine-effort`, and offers `sonnet`/`medium` as a safe fallback; the model then relaunches with routed flags. An explicit model/effort from the user still wins. `--session-id` and `--dangerously-skip-permissions` rules are unchanged. The check is a textual match on the same quote-stripped command used for the other flags, so it confirms the flags are present, not that their values are valid.
+The hook denies every Claude launch (Bash/CLI, `mcp__pane__agents_start`, `mcp__pane__panels_create`) whose tool command lacks `--model` or `--effort`. **User-visible consequence:** a launch with only `claude --session-id ...` is refused with a message that names the missing flag(s), points at `/model-skills:determine-model` and `/model-skills:determine-effort`, and offers `sonnet`/`medium` as a safe fallback; the model then relaunches with routed flags. An explicit model/effort from the user still wins. `--session-id` and `--dangerously-skip-permissions` rules are unchanged. The check is a textual match on the same quote-stripped command used for the other flags, so it confirms the flags are present, not that their values are valid.
 
 ## Caveats
 
@@ -112,7 +91,7 @@ MCP param names are camelCase (`toolCommand`, `baseBranch`), `yes` must be the b
 | `runpane panes create requires --agent or --tool-command in non-interactive shells.` | Pass `agent: "claude"` and `toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\""`. |
 | Hook deny (MCP): `must not use the bare agent: "claude" template` | Add `toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\""` next to `agent: "claude"` (route model/effort per task). |
 | Hook deny (Bash/CLI): `must not use the bare --agent claude template` | Add `--tool-command 'claude --model sonnet --effort medium --session-id "$(uuidgen)"'` next to `--agent claude`. |
-| Hook deny: `must carry both --model and --effort ... missing: ...` | Run `/runpane-utils:determine-model` and `/runpane-utils:determine-effort`, add the missing flag(s). Unsure → `--model sonnet --effort medium`. |
+| Hook deny: `must carry both --model and --effort ... missing: ...` | Run `/model-skills:determine-model` and `/model-skills:determine-effort`, add the missing flag(s). Unsure → `--model sonnet --effort medium`. |
 | `Unknown argument(s) for agents_start: tool-command` | Use camelCase `toolCommand`. |
 | `yes` string vs boolean | Pass `yes: true`, not `"true"`. |
 | `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` must be an id/name from `mcp__pane__repos_list`, not a path. |

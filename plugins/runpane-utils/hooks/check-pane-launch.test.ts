@@ -309,8 +309,8 @@ for (const t of ['mcp__pane__agents_start', 'mcp__pane__panels_create']) {
   const onlyModel = reasonOf(t, { agent: 'claude', toolCommand: ONLY_MODEL });
   const onlyEffort = reasonOf(t, { agent: 'claude', toolCommand: ONLY_EFFORT });
   test(`${t} routing msg names both skills`, () => {
-    expect(neither).toContain('/runpane-utils:determine-model');
-    expect(neither).toContain('/runpane-utils:determine-effort');
+    expect(neither).toContain('/model-skills:determine-model');
+    expect(neither).toContain('/model-skills:determine-effort');
   });
   test(`${t} routing msg lists missing flags`, () => {
     expect(neither).toContain('missing: --model --effort');
@@ -326,8 +326,8 @@ for (const t of ['mcp__pane__agents_start', 'mcp__pane__panels_create']) {
 }
 test('Bash routing msg: skills, fallback, user choice wins, no MCP form', () => {
   const neither = cliReason(NEITHER);
-  expect(neither).toContain('/runpane-utils:determine-model');
-  expect(neither).toContain('/runpane-utils:determine-effort');
+  expect(neither).toContain('/model-skills:determine-model');
+  expect(neither).toContain('/model-skills:determine-effort');
   expect(neither).toContain("--tool-command 'claude --model sonnet --effort medium --session-id");
   expect(neither).toContain('named explicitly always wins');
   expect(neither).not.toContain('toolCommand');

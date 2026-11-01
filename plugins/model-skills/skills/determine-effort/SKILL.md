@@ -1,6 +1,6 @@
 ---
 name: determine-effort
-description: Use whenever you must CHOOSE a reasoning-effort level for work you delegate or launch — Pane launches (mcp__pane__agents_start / panels_create, `runpane agents start`, `runpane panes create`), the Agent tool's `effort` parameter, Workflow/orchestration scripts (`agent()` opts.effort), or any similar spawn of a Claude worker. Returns an effort level (low, medium, high, xhigh, max, or ultracode for Pane/CLI launches) picked from the task's difficulty and the chosen model, plus exactly how to apply it for that consumer. Pair with determine-model.
+description: Use whenever you must CHOOSE a reasoning-effort level for work you delegate or launch — the Agent tool's `effort` parameter, Workflow `agent()` opts.effort, wmux `fanout_start`, `claude` CLI launches, or any similar spawn of a Claude worker. Returns an effort level (low, medium, high, xhigh, max, or ultracode for CLI launches and wmux `fanout_start`) picked from the task's difficulty and the chosen model, plus exactly how to apply it for that consumer. Pair with determine-model.
 ---
 
 # Determine Effort
@@ -18,7 +18,7 @@ If the user (or the repo/CLAUDE.md instructions) named an effort level for this 
 - `${CLAUDE_PLUGIN_ROOT}/references/effort-levels.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/effort-levels.md`)
 - `${CLAUDE_PLUGIN_ROOT}/references/task-signals.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/task-signals.md`)
 
-Know the model first (`/runpane-utils:determine-model`); the starting effort depends on it.
+Know the model first (`/model-skills:determine-model`); the starting effort depends on it.
 
 ## Step 3 — Classify and choose
 
@@ -37,7 +37,9 @@ Tune effort before switching to a bigger model.
 
 | Consumer | How to apply |
 |----------|--------------|
-| Pane launch (`agents_start`, `panels_create`, `runpane ...`) | Put `--effort <level>` inside the tool command: `claude --model <alias> --effort <level> --session-id "$(uuidgen)"`. Pane has no separate effort option, and the runpane-utils hook **denies Claude launches without `--effort`**. `ultracode` is valid here. |
+| wmux `fanout_start` | Per-task `agents: [{agent: "claude", model: "<alias>", effort: "<level>"}]`, index-aligned with `titles`; effort must match `^[a-z]{1,16}$`. An agent without an effort flag (non-Claude) ignores it with a warning. `ultracode` is valid with `agent: "claude"` (passed as the CLI flag). `roles`/`preset` pick from operator bindings instead, so your level is not used. |
+| wmux `remote_spawn` | No effort field. State the chosen level in the prompt. |
+| `claude` CLI launch (any terminal or multiplexer) | `claude --model <alias> --effort <level>`. `ultracode` is valid here. |
 | Agent tool | Set `effort: "<level>"`. Accepted values: `low`, `medium`, `high`, `xhigh`, `max`. **`ultracode` is not accepted** — use `xhigh`. Omitting it inherits the session effort. The tool's own guidance says to set it only when the user or a skill/instruction explicitly asks for effort routing; this skill is such an instruction when the user has installed it, but don't set it speculatively for trivial spawns. |
 | Workflow / orchestration script | Set `opts.effort` on the `agent()` call: `agent(prompt, {effort: "<level>"})`. Accepted values: `low`, `medium`, `high`, `xhigh`, `max` (no `ultracode`). Omit to inherit. Use `low` for cheap mechanical stages and higher tiers only for the hardest verify/judge stages. |
 | Anything else | Use the consumer's own effort option if it has one. If it has none, effort cannot be set there; say so rather than inventing a flag. |
@@ -45,9 +47,9 @@ Tune effort before switching to a bigger model.
 ## Step 5 — `ultracode` and other caveats
 
 - `--effort ultracode` = `xhigh` + dynamic workflows. Only for substantive, multi-phase, orchestrated work, and only on an xhigh-capable model (`opus` or `fable`, never `haiku`/`sonnet`).
-- It is documented (model-config, v2.1.203+) but absent from some local `claude --help` output. If a Pane/CLI launch errors on it, relaunch with `--effort xhigh`.
-- It exists only for Pane/CLI launches. For the Agent tool and Workflow scripts, translate to `xhigh`.
-- The `CLAUDE_CODE_EFFORT_LEVEL` environment variable overrides `--effort`. If routing seems ignored in a Pane shell, check for it.
+- It is documented (model-config, v2.1.203+) but absent from some local `claude --help` output. If a CLI or wmux launch errors on it, relaunch with `--effort xhigh`.
+- It exists only for CLI launches and wmux `fanout_start` with `agent: "claude"`. For the Agent tool and Workflow scripts, translate to `xhigh`.
+- The `CLAUDE_CODE_EFFORT_LEVEL` environment variable overrides `--effort`. If routing seems ignored in the launching shell, check for it.
 - **Cannot classify** (references unreadable): use `medium`.
 
 Return the level and the ready-to-paste application snippet for the consumer.

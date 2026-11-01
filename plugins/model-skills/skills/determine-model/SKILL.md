@@ -1,6 +1,6 @@
 ---
 name: determine-model
-description: Use whenever you must CHOOSE a model for work you delegate or launch — Pane launches (mcp__pane__agents_start / panels_create, `runpane agents start`, `runpane panes create`), the Agent tool's `model` parameter, Workflow/orchestration scripts (`agent()` opts.model), or any similar spawn of a Claude worker. Returns a model alias (haiku, sonnet, opus, fable) picked from the task's complexity, plus exactly how to apply it for that consumer. Pair with determine-effort.
+description: Use whenever you must CHOOSE a model for work you delegate or launch — the Agent tool's `model` parameter, Workflow `agent()` opts.model, wmux `fanout_start`, `claude` CLI launches, or any similar spawn of a Claude worker. Returns a model alias (haiku, sonnet, opus, fable) picked from the task's complexity, plus exactly how to apply it for that consumer. Pair with determine-effort.
 ---
 
 # Determine Model
@@ -35,7 +35,9 @@ Unsure between two → take the cheaper one; escalate on failure. Use the alias,
 
 | Consumer | How to apply |
 |----------|--------------|
-| Pane launch (`agents_start`, `panels_create`, `runpane ...`) | Put `--model <alias>` inside the tool command: `claude --model <alias> --effort <level> --session-id "$(uuidgen)"`. Pane has no separate model option, and the runpane-utils hook **denies Claude launches without `--model`**. |
+| wmux `fanout_start` | Per-task `agents: [{agent: "claude", model: "<alias>", effort: "<level>"}]`, index-aligned with `titles`. `roles` (Builder/Reviewer/Tester/Planner) or `preset` instead pick agent + model from the operator's bindings, so your alias is not used; at most one of `roles`/`preset`/`agents`. |
+| wmux `remote_spawn` | No model field (only `pc`, `agent`, `root`, `sub`, `prompt`, `expires_in_hours`). State the chosen alias in the prompt. |
+| `claude` CLI launch (any terminal or multiplexer) | `claude --model <alias> --effort <level>`. |
 | Agent tool | Set `model: "<alias>"`. Accepted values: `sonnet`, `opus`, `haiku`, `fable`. Omitting it inherits the parent session's model. |
 | Workflow / orchestration script | Set `opts.model` on the `agent()` call: `agent(prompt, {model: "<alias>"})`. Omitting it inherits the main-loop model, which is usually right for uniform stages — set it per stage only when the tier genuinely differs (cheap `haiku`/`sonnet` for mechanical stages, `opus`/`fable` for verify/judge). |
 | Anything else | Use the consumer's own model option with the alias; if it has none, state the chosen alias in the task prompt so the choice is visible. |
@@ -46,4 +48,4 @@ Unsure between two → take the cheaper one; escalate on failure. Use the alias,
 - **Alias rejected** by an older harness: drop the override so the call inherits the session model, and say so.
 - **Cannot classify** (references unreadable): use `sonnet`.
 
-Return the alias and the ready-to-paste application snippet for the consumer. Then run `/runpane-utils:determine-effort` for the matching effort level.
+Return the alias and the ready-to-paste application snippet for the consumer. Then run `/model-skills:determine-effort` for the matching effort level.

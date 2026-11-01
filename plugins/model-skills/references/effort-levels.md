@@ -32,4 +32,4 @@ Use only when the task is substantive, multi-phase, and benefits from orchestrat
 
 ## Precedence
 
-Environment (`CLAUDE_CODE_EFFORT_LEVEL`) > `--effort` flag > settings `effortLevel`. If the Pane shell exports the env var, the flag is overridden; mention it if routing seems ignored.
+Environment (`CLAUDE_CODE_EFFORT_LEVEL`) > `--effort` flag > settings `effortLevel`. If the launching shell exports the env var, the flag is overridden; mention it if routing seems ignored.

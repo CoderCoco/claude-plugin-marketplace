@@ -43,15 +43,12 @@ Pane has no model or effort option. The only way to choose them is flags inside 
 
 The hook **denies Claude launches that lack `--model` or `--effort`**, so both are mandatory.
 
-1. **Model:** invoke `/runpane-utils:determine-model` (Skill tool: `runpane-utils:determine-model`) and take the alias it returns.
-2. **Effort:** invoke `/runpane-utils:determine-effort` (Skill tool: `runpane-utils:determine-effort`) and take the level it returns.
-3. If the skills are unavailable, `Read` the references directly (first path that exists) and follow `model-routing.md`'s decision procedure:
-   - `${CLAUDE_PLUGIN_ROOT}/references/model-routing.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/model-routing.md`)
-   - `${CLAUDE_PLUGIN_ROOT}/references/effort-levels.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/effort-levels.md`)
-   - `${CLAUDE_PLUGIN_ROOT}/references/task-signals.md` (fallback `${CLAUDE_SKILL_DIR}/../../references/task-signals.md`)
+1. **Model:** invoke `/model-skills:determine-model` (Skill tool: `model-skills:determine-model`) and take the alias it returns.
+2. **Effort:** invoke `/model-skills:determine-effort` (Skill tool: `model-skills:determine-effort`) and take the level it returns.
+3. If the `model-skills` plugin is not installed, skip routing and use the literal fallback in step 6.
 4. A model/effort the user named explicitly always wins; route only what they left unspecified.
 5. Substitute into `<TOOL_COMMAND>`. Example: `claude --model opus --effort high --session-id "$(uuidgen)"`.
-6. Literal fallback if you cannot route: `claude --model sonnet --effort medium --session-id "$(uuidgen)"`. A command with no `--model`/`--effort` is denied.
+6. Literal fallback if you cannot route (or `model-skills` is not installed): `claude --model sonnet --effort medium --session-id "$(uuidgen)"`. A command with no `--model`/`--effort` is denied.
 
 Rules:
 
@@ -149,7 +146,7 @@ Symptom: the call runs >120s, gets backgrounded, then fails with `Timed out wait
 | `runpane panes create requires --agent or --tool-command in non-interactive shells.` | No agent given | Add `agent: "claude"` **and** `toolCommand: "claude --model sonnet --effort medium --session-id \"$(uuidgen)\""`. |
 | Hook deny (MCP tool): `Pane Claude launches must not use the bare agent: "claude" template...` | `agent: "claude"` without `toolCommand` | Add `toolCommand: "claude --model <alias> --effort <level> --session-id \"$(uuidgen)\""` (camelCase; Step 3b), keep `agent: "claude"`. |
 | Hook deny (Bash/CLI): `Pane Claude launches must not use the bare --agent claude template...` | `--agent claude` without `--tool-command` | Add `--tool-command 'claude --model <alias> --effort <level> --session-id "$(uuidgen)"'` next to `--agent claude` (Step 3b). |
-| Hook deny: `Pane Claude launches must carry both --model and --effort ... missing: ...` | Tool command lacks `--model` and/or `--effort` | Run `/runpane-utils:determine-model` and `/runpane-utils:determine-effort` (Step 3b), add the flag(s) to the tool command. Unsure → `--model sonnet --effort medium`. |
+| Hook deny: `Pane Claude launches must carry both --model and --effort ... missing: ...` | Tool command lacks `--model` and/or `--effort` | Run `/model-skills:determine-model` and `/model-skills:determine-effort` (Step 3b), add the flag(s) to the tool command. Unsure → `--model sonnet --effort medium`. |
 | `Unknown argument(s) for agents_start: tool-command` | Hyphenated MCP param name | Use camelCase `toolCommand`. Don't send both spellings. |
 | `yes` ignored / call refused without confirmation | `yes: "true"` (string) or missing | Pass the boolean `yes: true`. |
 | `ERR_RUNPANE_REPO_NOT_FOUND` | `repo` was an absolute path or guessed name | Call `mcp__pane__repos_list` and pass an `id` or `name` from it. |
