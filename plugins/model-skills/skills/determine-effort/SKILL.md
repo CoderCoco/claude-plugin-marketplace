@@ -38,7 +38,7 @@ Tune effort before switching to a bigger model.
 | Consumer | How to apply |
 |----------|--------------|
 | wmux `fanout_start` | Per-task `agents: [{agent: "claude", model: "<alias>", effort: "<level>"}]`, index-aligned with `titles`; effort must match `^[a-z]{1,16}$`. An agent without an effort flag (non-Claude) ignores it with a warning. `ultracode` is valid with `agent: "claude"` (passed as the CLI flag). `roles`/`preset` pick from operator bindings instead, so your level is not used. |
-| wmux `remote_spawn` | No effort field. State the chosen level in the prompt. |
+| wmux `remote_spawn` | Cannot be set: there is no effort field, and prompt text does not change the worker's startup effort; the remote PC's configured default applies. If effort matters, use `fanout_start` or a `claude` CLI launch instead, and tell the user. |
 | `claude` CLI launch (any terminal or multiplexer) | `claude --model <alias> --effort <level>`. `ultracode` is valid here. |
 | Agent tool | Set `effort: "<level>"`. Accepted values: `low`, `medium`, `high`, `xhigh`, `max`. **`ultracode` is not accepted** — use `xhigh`. Omitting it inherits the session effort. The tool's own guidance says to set it only when the user or a skill/instruction explicitly asks for effort routing; this skill is such an instruction when the user has installed it, but don't set it speculatively for trivial spawns. |
 | Workflow / orchestration script | Set `opts.effort` on the `agent()` call: `agent(prompt, {effort: "<level>"})`. Accepted values: `low`, `medium`, `high`, `xhigh`, `max` (no `ultracode`). Omit to inherit. Use `low` for cheap mechanical stages and higher tiers only for the hardest verify/judge stages. |

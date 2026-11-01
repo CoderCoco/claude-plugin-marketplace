@@ -34,4 +34,10 @@ Prefer the alias over the full ID so launches track the current generation.
 
 ## Fable fallback
 
-Fable may need a one-time usage-credit consent in the user's account. If a Fable launch fails (agent never starts, consent/credit error), relaunch the same task with `--model opus --effort xhigh` and tell the user.
+Fable may need a one-time usage-credit consent in the user's account. If a Fable launch fails (agent never starts, consent/credit error), retry the same task on `opus` / `xhigh` using the consumer's own mechanism, and tell the user:
+
+- `claude` CLI: `--model opus --effort xhigh`
+- Agent tool: `model: "opus"`, `effort: "xhigh"`
+- Workflow `agent()`: `{model: "opus", effort: "xhigh"}`
+- wmux `fanout_start`: that task's `agents` entry with `model: "opus"`, `effort: "xhigh"`
+- wmux `remote_spawn`: cannot be set (no model/effort fields); the remote PC's defaults apply. Use `fanout_start` or a CLI launch if the retry must run on `opus`.

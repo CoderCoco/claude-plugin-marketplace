@@ -25,7 +25,7 @@ References (the only place the routing tables live): `references/model-routing.m
 | Agent tool | `model: "<alias>"` | `effort: "<level>"` (no `ultracode`; use `xhigh`) |
 | Workflow `agent()` | `{model: "<alias>"}` | `{effort: "<level>"}` (no `ultracode`) |
 | wmux `fanout_start` | `agents: [{agent: "claude", model, effort}]`, one per task | same entry; `ultracode` ok with `agent: "claude"`. `roles`/`preset` pick from operator bindings instead |
-| wmux `remote_spawn` | no field; state it in the prompt | no field; state it in the prompt |
+| wmux `remote_spawn` | cannot be set (remote PC's default applies) | cannot be set (remote PC's default applies) |
 | `claude` CLI | `--model <alias>` | `--effort <level>` (`ultracode` ok) |
 
 ## Defaults

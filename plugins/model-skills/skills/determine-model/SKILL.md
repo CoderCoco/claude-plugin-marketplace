@@ -36,7 +36,7 @@ Unsure between two → take the cheaper one; escalate on failure. Use the alias,
 | Consumer | How to apply |
 |----------|--------------|
 | wmux `fanout_start` | Per-task `agents: [{agent: "claude", model: "<alias>", effort: "<level>"}]`, index-aligned with `titles`. `roles` (Builder/Reviewer/Tester/Planner) or `preset` instead pick agent + model from the operator's bindings, so your alias is not used; at most one of `roles`/`preset`/`agents`. |
-| wmux `remote_spawn` | No model field (only `pc`, `agent`, `root`, `sub`, `prompt`, `expires_in_hours`). State the chosen alias in the prompt. |
+| wmux `remote_spawn` | No model field (only `pc`, `agent`, `root`, `sub`, `prompt`, `expires_in_hours`). The model cannot be set this way, and prompt text does not change it; the remote PC's configured default applies. If the model matters, use `fanout_start` or a `claude` CLI launch instead, and tell the user. |
 | `claude` CLI launch (any terminal or multiplexer) | `claude --model <alias> --effort <level>`. |
 | Agent tool | Set `model: "<alias>"`. Accepted values: `sonnet`, `opus`, `haiku`, `fable`. Omitting it inherits the parent session's model. |
 | Workflow / orchestration script | Set `opts.model` on the `agent()` call: `agent(prompt, {model: "<alias>"})`. Omitting it inherits the main-loop model, which is usually right for uniform stages — set it per stage only when the tier genuinely differs (cheap `haiku`/`sonnet` for mechanical stages, `opus`/`fable` for verify/judge). |
