@@ -1,8 +1,8 @@
 # Model routing
 
-Pick the cheapest model that reliably finishes the task. Consumed by the `determine-model` and `determine-effort` skills, which also say how to apply the choice per consumer. For Pane launches, which have no model option, the choice is spliced into the tool command:
+Pick the cheapest model that reliably finishes the task. Consumed by the `determine-model` and `determine-effort` skills, which also say how to apply the choice per consumer. For CLI launches the choice becomes flags:
 
-    claude --model <alias> --effort <level> --session-id "$(uuidgen)"
+    claude --model <alias> --effort <level>
 
 Sources: [model-config](https://code.claude.com/docs/en/model-config), [optimizing cost and intelligence](https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence).
 
@@ -23,7 +23,7 @@ Prefer the alias over the full ID so launches track the current generation.
 2. Classify the task with `task-signals.md` (our own judgment, not an Anthropic taxonomy).
 3. Not sure → **sonnet / medium**.
 4. Choose effort per `effort-levels.md`.
-5. Splice `--model <alias> --effort <level>` into the tool command before `--session-id`.
+5. Apply it for the consumer: `--model <alias> --effort <level>` on the `claude` CLI, or the matching fields of the Agent tool, Workflow `agent()`, or wmux `fanout_start` (see the skills' Step 4).
 
 ## Tie-breakers
 
@@ -34,4 +34,10 @@ Prefer the alias over the full ID so launches track the current generation.
 
 ## Fable fallback
 
-Fable may need a one-time usage-credit consent in the user's account. If a Fable launch fails (agent panel never starts, consent/credit error), relaunch the same task with `--model opus --effort xhigh` and tell the user.
+Fable may need a one-time usage-credit consent in the user's account. If a Fable launch fails (agent never starts, consent/credit error), retry the same task on `opus` / `xhigh` using the consumer's own mechanism, and tell the user:
+
+- `claude` CLI: `--model opus --effort xhigh`
+- Agent tool: `model: "opus"`, `effort: "xhigh"`
+- Workflow `agent()`: `{model: "opus", effort: "xhigh"}`
+- wmux `fanout_start`: that task's `agents` entry with `model: "opus"`, `effort: "xhigh"`
+- wmux `remote_spawn`: cannot be set (no model/effort fields); the remote PC's defaults apply. Use `fanout_start` or a CLI launch if the retry must run on `opus`.
